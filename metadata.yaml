@@ -1,0 +1,13 @@
+name: astrbot_plugin_jev_gateway
+display_name: Jev 决策网关
+desc: "Jev 接口统一网关：在一处登记 API Key 与地址，其他插件只填代理地址和协议名即可共用，不用每个插件各配一遍。"
+short_desc: "Jev 接口一处配置，多插件共用"
+version: v1.0.0
+author: uuutt2023
+repo: https://github.com/uuutt2023/astrbot_plugin_jev_gateway
+category: AI 增强
+tags:
+  - Jev
+  - 决策
+  - 网关
+  - 代理

@@ -1,0 +1,167 @@
+{
+  "gateway": {
+    "description": "Jev 决策网关",
+    "hint": "在这里登记 Jev 接口入口，其他插件只填「代理地址 + 协议名」就能借用，不用各自配一遍 Key。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用网关",
+        "hint": "关闭后网关不监听端口，客户端请求会失败。",
+        "default": true
+      },
+      "host": {
+        "type": "string",
+        "description": "监听地址",
+        "hint": "默认只监听本机。改成 0.0.0.0 会暴露给局域网里的其他程序。",
+        "default": "127.0.0.1"
+      },
+      "port": {
+        "type": "int",
+        "description": "监听端口",
+        "hint": "被占用时网关会启动失败并在日志里报错。",
+        "default": 8770
+      },
+      "access_token": {
+        "type": "string",
+        "description": "访问令牌",
+        "hint": "客户端需带 X-Jev-Gateway-Token 头。留空不校验，只在纯本机使用时够用。",
+        "default": ""
+      },
+      "api_entries": {
+        "type": "template_list",
+        "description": "API 入口",
+        "hint": "每条入口按「协议名」路由。同名协议可登记多条：第一条是主入口，上游 5xx 时自动切到下一条。",
+        "templates": {
+          "systemone": {
+            "label": "SystemOne（官方 Jev / TypeSafe）",
+            "items": {
+              "protocol": {
+                "type": "string",
+                "description": "协议名",
+                "hint": "其他插件请求时填这个名字。",
+                "default": "systemone"
+              },
+              "base_url": {
+                "type": "string",
+                "description": "接口地址",
+                "hint": "网关根地址，例如 https://jevmodel.org。",
+                "default": ""
+              },
+              "api_key": {
+                "type": "string",
+                "description": "API Key",
+                "default": ""
+              },
+              "model": {
+                "type": "string",
+                "description": "模型名",
+                "hint": "请求体里没带 model 时用它。",
+                "default": "jev-latest"
+              },
+              "endpoint_path": {
+                "type": "string",
+                "description": "端点路径",
+                "hint": "留空＝/v1/systemone。第三方代理如 jevtypesafeai.com 填 /api/v1/decide。",
+                "default": ""
+              },
+              "timeout": {
+                "type": "float",
+                "description": "超时（秒）",
+                "default": 10
+              }
+            }
+          },
+          "decisions": {
+            "label": "OpenAI Decisions",
+            "items": {
+              "protocol": {
+                "type": "string",
+                "description": "协议名",
+                "hint": "其他插件请求时填这个名字。",
+                "default": "decisions"
+              },
+              "base_url": {
+                "type": "string",
+                "description": "接口地址",
+                "hint": "网关根地址。",
+                "default": ""
+              },
+              "api_key": {
+                "type": "string",
+                "description": "API Key",
+                "default": ""
+              },
+              "model": {
+                "type": "string",
+                "description": "模型名",
+                "hint": "请求体里没带 model 时用它。",
+                "default": ""
+              },
+              "endpoint_path": {
+                "type": "string",
+                "description": "端点路径",
+                "hint": "留空＝/v1/decisions。",
+                "default": ""
+              },
+              "timeout": {
+                "type": "float",
+                "description": "超时（秒）",
+                "default": 10
+              }
+            }
+          },
+          "custom": {
+            "label": "自定义协议",
+            "items": {
+              "protocol": {
+                "type": "string",
+                "description": "协议名",
+                "hint": "自定义这个名字，客户端按它请求；没登记对应入口会返回 404。",
+                "default": "custom"
+              },
+              "base_url": {
+                "type": "string",
+                "description": "接口地址",
+                "hint": "网关根地址。",
+                "default": ""
+              },
+              "api_key": {
+                "type": "string",
+                "description": "API Key",
+                "default": ""
+              },
+              "model": {
+                "type": "string",
+                "description": "模型名",
+                "hint": "请求体里没带 model 时用它。",
+                "default": ""
+              },
+              "endpoint_path": {
+                "type": "string",
+                "description": "端点路径",
+                "hint": "自定义协议没有默认路径，必须填。",
+                "default": ""
+              },
+              "timeout": {
+                "type": "float",
+                "description": "超时（秒）",
+                "default": 10
+              }
+            }
+          }
+        },
+        "default": [
+          {
+            "__template_key": "systemone",
+            "protocol": "systemone",
+            "base_url": "https://jevmodel.org",
+            "api_key": "",
+            "model": "jev-latest",
+            "endpoint_path": "",
+            "timeout": 10
+          }
+        ]
+      }
+    }
+  }
+}
