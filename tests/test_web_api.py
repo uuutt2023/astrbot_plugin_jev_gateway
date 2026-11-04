@@ -298,3 +298,14 @@ async def test_topology_endpoint_without_clients(tmp_path):
     data = (await api.get_topology())["data"]
     assert all(node["kind"] != "client" for node in data["nodes"])
     assert len(data["nodes"]) >= 2
+
+
+async def test_entries_carry_stable_id(tmp_path):
+    """入口列表要带稳定 id，拓扑图靠它把节点和配置对上。"""
+    plugin = _plugin(tmp_path)
+    api = GatewayAPI(plugin)
+    data = (await api.get_entries())["data"]
+    ids = [item["id"] for item in data["entries"]]
+    assert ids
+    assert all(i for i in ids)
+    assert len(set(ids)) == len(ids), "入口 id 不能重复"

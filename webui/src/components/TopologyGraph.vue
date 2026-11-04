@@ -6,6 +6,7 @@
  * 这里只负责把数据喂进去、把交互事件抛出去。
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { NButton } from 'naive-ui'
 import { GraphInteraction } from '@/graph/interaction'
 import { ForceLayout } from '@/graph/layout'
 import { GraphRenderer } from '@/graph/renderer'

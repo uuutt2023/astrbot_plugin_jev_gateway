@@ -19,12 +19,15 @@ import {
   NAlert,
   NText,
 } from 'naive-ui'
+import EntryForm from '@/components/EntryForm.vue'
+import GatewaySettings from '@/components/GatewaySettings.vue'
 import TopologyGraph from '@/components/TopologyGraph.vue'
 import type { GraphEdge, GraphNode } from '@/graph/types'
 import { useBridge } from '@/composables/useBridge'
 import { detectThemeMode, themeOverrides } from '@/theme'
 
 interface Entry {
+  id?: string
   protocol: string
   kind: string
   priority: number
@@ -68,13 +71,6 @@ const draft = ref({
   host: '127.0.0.1', port: 8770, advertised_url: '', access_token: '', lb_strategy: 'round_robin',
 })
 
-const STRATEGY_OPTIONS = [
-  { label: '轮询', value: 'round_robin' },
-  { label: '随机', value: 'random' },
-  { label: '加权', value: 'weighted' },
-  { label: '最少失败', value: 'least_failure' },
-]
-
 const balances = ref<Record<string, Balance>>({})
 const testProtocol = ref('')
 const testState = ref('群里有人在问：明天开会吗？')
@@ -98,11 +94,13 @@ const topologySelected = ref<GraphNode | null>(null)
 const topologyAuto = ref(false)
 let topologyTimer: number | null = null
 
-const KIND_OPTIONS = [
-  { label: 'SystemOne（官方 Jev / TypeSafe）', value: 'systemone' },
-  { label: 'OpenAI Decisions', value: 'decisions' },
-  { label: '自定义协议', value: 'custom' },
-]
+// 拓扑里选中的 API 节点 → 配置列表里那一条
+const selectedEntry = computed(() => {
+  const node = topologySelected.value
+  if (!node || node.kind !== 'api') return null
+  const entryId = node.id.replace(/^api:/, '')
+  return entries.value.find((e) => e.id === entryId) || null
+})
 
 const protocolOptions = computed(() =>
   entries.value.map((e) => ({ label: e.protocol, value: e.protocol })),
@@ -242,6 +240,11 @@ function onTopologySelect(node: GraphNode | null) {
   topologySelected.value = node
 }
 
+async function saveSelectedEntry() {
+  await saveEntries()
+  await loadTopology()
+}
+
 async function loadTopology() {
   try {
     const data = (await bridge.apiGet('topology')) as any
@@ -328,112 +331,19 @@ onMounted(async () => {
           <n-spin :show="loading">
             <n-space vertical size="medium">
               <n-card size="small" title="网关设置">
-                <n-grid :x-gap="12" :y-gap="6" cols="1 600 2 900 4">
-                  <n-grid-item>
-                    <n-form-item label="监听地址" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="draft.host" placeholder="127.0.0.1" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="监听端口" label-placement="top" :show-feedback="false">
-                      <n-input-number v-model:value="draft.port" :min="1" :max="65535" style="width: 100%" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="对外地址" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="draft.advertised_url" placeholder="Docker 里填 http://容器名:8770" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="负载均衡策略" label-placement="top" :show-feedback="false">
-                      <n-select v-model:value="draft.lb_strategy" :options="STRATEGY_OPTIONS" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="访问令牌" label-placement="top" :show-feedback="false">
-                      <n-input
-                        v-model:value="draft.access_token"
-                        type="password"
-                        show-password-on="click"
-                        :placeholder="settings.access_token_set ? '已设置，留空不改' : '留空＝不校验'"
-                      />
-                    </n-form-item>
-                  </n-grid-item>
-                </n-grid>
-                <n-space justify="space-between" align="center">
-                  <n-text depth="3" style="font-size: 12px">
-                    跨容器/跨机器访问要把监听地址改成 0.0.0.0，对外地址填别的容器能访问到的地址。
-                  </n-text>
-                  <n-button type="primary" size="small" :loading="loading" @click="saveSettings">保存并重启</n-button>
-                </n-space>
+                <GatewaySettings
+                  :draft="draft"
+                  :access-token-set="settings.access_token_set"
+                  :busy="loading"
+                  @save="saveSettings"
+                />
               </n-card>
 
-              <n-card v-for="(entry, index) in entries" :key="index" size="small" :title="entry.protocol || '新入口'">
+              <n-card v-for="(entry, index) in entries" :key="entry.id || index" size="small" :title="entry.protocol || '新入口'">
                 <template #header-extra>
                   <n-button size="tiny" quaternary type="error" @click="removeEntry(index)">删除</n-button>
                 </template>
-                <n-grid :x-gap="12" :y-gap="6" cols="1 600 2 900 3">
-                  <n-grid-item>
-                    <n-form-item label="入口名称" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="entry.protocol" placeholder="主 Key / 备用 Key" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="协议类型" label-placement="top" :show-feedback="false">
-                      <n-select v-model:value="entry.kind" :options="KIND_OPTIONS" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="超时（秒）" label-placement="top" :show-feedback="false">
-                      <n-input-number v-model:value="entry.timeout" :min="1" :max="300" style="width: 100%" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="优先级" label-placement="top" :show-feedback="false">
-                      <n-input-number v-model:value="entry.priority" :min="1" :max="999" style="width: 100%" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="权重" label-placement="top" :show-feedback="false">
-                      <n-input-number v-model:value="entry.weight" :min="0" :max="999" style="width: 100%" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="接口地址" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="entry.base_url" placeholder="https://jevmodel.org" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="API Key" label-placement="top" :show-feedback="false">
-                      <n-input
-                        v-model:value="entry.api_key"
-                        type="password"
-                        show-password-on="click"
-                        :placeholder="entry.key_masked || 'sk- 开头'"
-                      />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="模型名" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="entry.model" placeholder="jev-latest" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="端点路径" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="entry.endpoint_path" placeholder="留空按类型默认" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="余额查询地址" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="entry.balance_url" placeholder="留空＝不查" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item>
-                    <n-form-item label="余额字段" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="entry.balance_field" placeholder="如 data.balance" />
-                    </n-form-item>
-                  </n-grid-item>
-                </n-grid>
+                <EntryForm :entry="entry" :busy="loading" @save="saveEntries" />
               </n-card>
 
               <n-space justify="space-between">
@@ -518,12 +428,41 @@ onMounted(async () => {
               />
 
               <n-card v-if="topologySelected" size="small" :title="topologySelected.label">
-                <div class="kv">
-                  <template v-for="(value, key) in topologySelected.meta || {}" :key="key">
-                    <span class="k">{{ key }}</span>
-                    <span class="v">{{ value }}</span>
-                  </template>
-                </div>
+                <n-space vertical size="medium">
+                  <div v-if="topologySelected.kind !== 'gateway'">
+                    <n-text depth="3" style="font-size: 12px">运行状态</n-text>
+                    <div class="kv">
+                      <template v-for="(value, key) in topologySelected.meta || {}" :key="key">
+                        <span class="k">{{ key }}</span>
+                        <span class="v">{{ value }}</span>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div v-if="topologySelected.kind === 'gateway'">
+                    <n-text depth="3" style="font-size: 12px">网关配置</n-text>
+                    <GatewaySettings
+                      :draft="draft"
+                      :access-token-set="settings.access_token_set"
+                      :busy="loading"
+                      @save="saveSettings"
+                    />
+                  </div>
+
+                  <div v-else-if="selectedEntry">
+                    <n-text depth="3" style="font-size: 12px">入口配置</n-text>
+                    <EntryForm
+                      :entry="selectedEntry"
+                      :busy="loading"
+                      show-save
+                      @save="saveSelectedEntry"
+                    />
+                  </div>
+
+                  <n-alert v-else-if="topologySelected.kind === 'api'" type="warning" :show-icon="false">
+                    找不到这条入口的配置，可能已经被删掉了。
+                  </n-alert>
+                </n-space>
               </n-card>
             </n-space>
           </n-card>

@@ -106,3 +106,28 @@ class TestBuildGraph:
         assert len(graph["nodes"]) == 1
         assert graph["nodes"][0]["kind"] == "gateway"
         assert graph["edges"] == []
+
+
+class TestNodeIdMatchesEntryList:
+    """拓扑节点要能和配置列表里的那一条对上号，才能在详情里直接改配置。"""
+
+    def test_api_node_id_points_to_the_same_entry(self):
+        from astrbot_plugin_jev_gateway.web_api import _entry_payload
+
+        registry = entry_mod.build_registry(
+            [
+                {"protocol": "a", "kind": "systemone", "base_url": "https://a"},
+                {"protocol": "b", "kind": "systemone", "base_url": "https://b"},
+            ]
+        )
+        graph = topology_mod.build_graph(registry, topology_mod.ClientTracker())
+        api_nodes = [n for n in graph["nodes"] if n["kind"] == "api"]
+
+        entries = [e for group in registry.values() for e in group]
+        payloads = [_entry_payload(e) for e in entries]
+        by_id = {p["id"]: p for p in payloads}
+
+        for node in api_nodes:
+            entry_id = node["id"].removeprefix("api:")
+            assert entry_id in by_id, f"{node['id']} 在入口列表里找不到对应项"
+            assert by_id[entry_id]["protocol"] == node["label"]

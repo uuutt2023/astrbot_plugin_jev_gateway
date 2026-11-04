@@ -59,6 +59,8 @@ def _as_int(value, default: int) -> int:
 
 def _entry_payload(entry) -> Dict[str, Any]:
     return {
+        # 稳定标识：拓扑图里的节点靠它对上号
+        "id": entry.id,
         "protocol": entry.protocol,
         "kind": entry.kind,
         "base_url": entry.base_url,
