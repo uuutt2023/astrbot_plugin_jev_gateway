@@ -11,6 +11,7 @@ import {
   NInputNumber,
   NSelect,
   NSpace,
+  NText,
 } from 'naive-ui'
 
 export interface Entry {

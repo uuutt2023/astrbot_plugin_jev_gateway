@@ -1,7 +1,19 @@
 <script setup lang="ts">
 /** 对选中的 API 入口发一次真实请求，看网关回了什么。 */
 import { ref } from 'vue'
-import { NAlert, NButton, NFormItem, NSelect, NSpace, NText } from 'naive-ui'
+import {
+  NAlert,
+  NButton,
+  NForm,
+  NFormItem,
+  NGrid,
+  NGridItem,
+  NInput,
+  NSelect,
+  NSpace,
+  NTag,
+  NText,
+} from 'naive-ui'
 import { useBridge } from '@/composables/useBridge'
 
 const props = defineProps<{

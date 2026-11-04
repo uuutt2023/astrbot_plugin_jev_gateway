@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "npm run check:naive && vite build",
+    "preview": "vite preview",
+    "check:naive": "node scripts/check-naive-imports.mjs"
   },
   "dependencies": {
     "@iconify/vue": "^5.0.1",
