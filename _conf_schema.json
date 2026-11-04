@@ -1,5 +1,6 @@
 {
   "gateway": {
+    "type": "object",
     "description": "Jev 决策网关",
     "hint": "在这里登记 Jev 接口入口，其他插件只填「代理地址 + 协议名」就能借用，不用各自配一遍 Key。",
     "items": {
@@ -33,7 +34,7 @@
         "hint": "每条入口按「协议名」路由。同名协议可登记多条：第一条是主入口，上游 5xx 时自动切到下一条。",
         "templates": {
           "systemone": {
-            "label": "SystemOne（官方 Jev / TypeSafe）",
+            "name": "SystemOne（官方 Jev / TypeSafe）",
             "items": {
               "protocol": {
                 "type": "string",
@@ -67,12 +68,12 @@
               "timeout": {
                 "type": "float",
                 "description": "超时（秒）",
-                "default": 10
+                "default": 10.0
               }
             }
           },
           "decisions": {
-            "label": "OpenAI Decisions",
+            "name": "OpenAI Decisions",
             "items": {
               "protocol": {
                 "type": "string",
@@ -106,12 +107,12 @@
               "timeout": {
                 "type": "float",
                 "description": "超时（秒）",
-                "default": 10
+                "default": 10.0
               }
             }
           },
           "custom": {
-            "label": "自定义协议",
+            "name": "自定义协议",
             "items": {
               "protocol": {
                 "type": "string",
@@ -145,7 +146,7 @@
               "timeout": {
                 "type": "float",
                 "description": "超时（秒）",
-                "default": 10
+                "default": 10.0
               }
             }
           }
@@ -158,7 +159,7 @@
             "api_key": "",
             "model": "jev-latest",
             "endpoint_path": "",
-            "timeout": 10
+            "timeout": 10.0
           }
         ]
       }

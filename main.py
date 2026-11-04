@@ -46,12 +46,17 @@ class JevGatewayPlugin(Star):
 
     # ── 配置 ────────────────────────────────────────────────────
     def _items(self) -> dict:
+        """网关配置。
+
+        框架解析 schema 时会把分组的 items 摊平到分组键下（AstrBotConfig
+        的 _config_schema_to_default_config 就是这么做的），所以这里拿到的
+        就是 enabled/host/port/... 这几项；带 items 的形态也一并兼容。
+        """
         gateway = self.config.get("gateway")
-        if isinstance(gateway, dict):
-            items = gateway.get("items")
-            if isinstance(items, dict):
-                return items
-        return {}
+        if not isinstance(gateway, dict):
+            return {}
+        items = gateway.get("items")
+        return items if isinstance(items, dict) else gateway
 
     def _build_registry(self) -> dict[str, list[entry_mod.Entry]]:
         return entry_mod.build_registry(self._items().get("api_entries"))

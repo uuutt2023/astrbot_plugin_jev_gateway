@@ -112,7 +112,8 @@ def make_plugin(plugin_module):
     """造一个带配置的插件实例。"""
 
     def _make(items=None, enabled=True):
-        cfg = {"gateway": {"items": {"enabled": enabled, **(items or {})}}}
+        # 框架给插件的是摊平后的结构：分组的 items 直接挂在分组键下
+        cfg = {"gateway": {"enabled": enabled, **(items or {})}}
         return plugin_module.JevGatewayPlugin(None, cfg)
 
     return _make
