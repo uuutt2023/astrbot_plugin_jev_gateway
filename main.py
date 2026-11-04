@@ -14,6 +14,7 @@ from astrbot.api.star import Context, Star, register
 
 from .core import entries as entry_mod
 from .core.server import GatewayServer
+from .web_api import register as register_web_api
 
 
 def _plugin_version() -> str:
@@ -73,6 +74,7 @@ class JevGatewayPlugin(Star):
 
     # ── 生命周期 ────────────────────────────────────────────────
     async def initialize(self):
+        register_web_api(self.context, self)
         items = self._items()
         if not items.get("enabled", True):
             logger.info("[jev_gateway] 已禁用，不监听端口")

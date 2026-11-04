@@ -7,6 +7,10 @@ from astrbot_plugin_jev_gateway.core import entries
 from astrbot_plugin_jev_gateway.core.server import GatewayServer
 
 
+async def _fake_forward(entry, method, headers, body):
+    return 200, {}, b"{}"
+
+
 @pytest.fixture
 async def client():
     registry = entries.build_registry(
@@ -75,9 +79,29 @@ async def test_alias_paths(client, monkeypatch):
     assert seen["protocol"] == "systemone"
 
 
-async def test_token_required():
+async def test_token_not_required_from_loopback(monkeypatch):
+    """本机来的请求免检——客户端插件只填代理地址与协议名两项。"""
     registry = entries.build_registry([{"protocol": "p", "base_url": "https://up"}])
     server = GatewayServer(registry=registry, access_token="secret")
+    monkeypatch.setattr(
+        "astrbot_plugin_jev_gateway.core.server.relay.forward",
+        _fake_forward,
+    )
+    test_client = TestClient(TestServer(server.app))
+    await test_client.start_server()
+    try:
+        resp = await test_client.post("/jev/p", data=b"{}")
+        assert resp.status == 200
+    finally:
+        await test_client.close()
+
+
+async def test_token_required_from_remote(monkeypatch):
+    registry = entries.build_registry([{"protocol": "p", "base_url": "https://up"}])
+    server = GatewayServer(registry=registry, access_token="secret")
+    monkeypatch.setattr(
+        "astrbot_plugin_jev_gateway.core.server._is_loopback", lambda request: False
+    )
     test_client = TestClient(TestServer(server.app))
     await test_client.start_server()
     try:

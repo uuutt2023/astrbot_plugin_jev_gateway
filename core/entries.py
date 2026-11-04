@@ -33,6 +33,8 @@ class Entry:
     endpoint_path: str = ""
     timeout: float = 10.0
     headers: dict[str, str] = field(default_factory=dict)
+    balance_url: str = ""
+    balance_field: str = ""
 
     @property
     def url(self) -> str:
@@ -64,6 +66,8 @@ class Entry:
             "url": self.url,
             "model": self.model,
             "key": self.masked_key(),
+            "balance_url": self.balance_url,
+            "balance_field": self.balance_field,
         }
 
 
@@ -102,6 +106,8 @@ def parse_entry(raw: dict) -> Entry | None:
         headers={str(k): str(v) for k, v in headers.items()}
         if isinstance(headers, dict)
         else {},
+        balance_url=_as_str(raw.get("balance_url")),
+        balance_field=_as_str(raw.get("balance_field")),
     )
 
 

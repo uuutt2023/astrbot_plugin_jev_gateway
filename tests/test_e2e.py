@@ -8,6 +8,13 @@ from aiohttp.test_utils import TestClient, TestServer
 from astrbot_plugin_jev_gateway.core import entries
 from astrbot_plugin_jev_gateway.core.server import GatewayServer
 
+#: 调用方发给网关的内部请求体（SystemOne 形状）
+INTERNAL = {
+    "model": "jev-latest",
+    "state": "群里的对话内容",
+    "questions": {"should_reply": {"type": "noul", "instructions": "Should we reply?"}},
+}
+
 
 @pytest.fixture
 async def upstream():
@@ -45,10 +52,7 @@ async def test_end_to_end_relay(upstream):
     client = TestClient(TestServer(server.app))
     await client.start_server()
     try:
-        resp = await client.post(
-            "/jev/systemone",
-            json={"questions": {"q": {"type": "noul"}}},
-        )
+        resp = await client.post("/jev/systemone", json=INTERNAL)
         assert resp.status == 200
         data = await resp.json()
         assert data["answers"]["ok"]["noul"] == 0.9
@@ -73,7 +77,7 @@ async def test_end_to_end_custom_endpoint(upstream):
     client = TestClient(TestServer(server.app))
     await client.start_server()
     try:
-        resp = await client.post("/jev/custom", json={"questions": {}})
+        resp = await client.post("/jev/custom", json=INTERNAL)
         assert resp.status == 200
         assert upstream["path"] == "/api/v1/decide"
     finally:
@@ -97,7 +101,7 @@ async def test_upstream_error_is_passed_through(upstream):
         gw = TestClient(TestServer(server.app))
         await gw.start_server()
         try:
-            resp = await gw.post("/jev/p", json={})
+            resp = await gw.post("/jev/p", json=INTERNAL)
             assert resp.status == 402
             assert "insufficient credits" in await resp.text()
         finally:

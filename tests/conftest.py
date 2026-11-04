@@ -73,8 +73,27 @@ def _install_astrbot_stub():
     star.Star = Star
     star.register = register
 
+    # astrbot.api.web（4.27+）：WebUI 后端 API 用的那套
+    web = types.ModuleType("astrbot.api.web")
+
+    class _WebRequest:
+        async def json(self, default=None):
+            return default
+
+    # 真实实现是把 payload 原样作为响应体，这里保持一致
+    def json_response(data=None, status=200, **kwargs):
+        return data
+
+    def error_response(message="", status_code=400, **kwargs):
+        return {"status": "error", "message": message, "data": {}}
+
+    web.request = _WebRequest()
+    web.json_response = json_response
+    web.error_response = error_response
+
     api.event = event
     api.star = star
+    api.web = web
     api.logger = __import__("logging").getLogger("astrbot.stub")
     api.AstrBotConfig = dict
     astrbot.api = api
@@ -85,6 +104,7 @@ def _install_astrbot_stub():
             "astrbot.api": api,
             "astrbot.api.event": event,
             "astrbot.api.star": star,
+            "astrbot.api.web": web,
         }
     )
 

@@ -10,10 +10,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 
 from aiohttp import web
 
+from . import balance as balance_mod
 from . import entries as entry_mod
 from . import relay
 
@@ -22,6 +25,9 @@ TOKEN_HEADER = "X-Jev-Gateway-Token"
 #: 触发故障转移的上游状态码
 FAILOVER_STATUSES = {502, 503, 504}
 
+#: 去重缓存的存活时间（秒）
+CACHE_TTL = 30.0
+
 
 def _json(payload: dict, status: int = 200) -> web.Response:
     return web.Response(
@@ -29,6 +35,14 @@ def _json(payload: dict, status: int = 200) -> web.Response:
         status=status,
         content_type="application/json",
     )
+
+
+def _is_loopback(request: web.Request) -> bool:
+    peer = request.transport.get_extra_info("peername") if request.transport else None
+    if not peer:
+        return False
+    host = str(peer[0]) if isinstance(peer, (tuple, list)) else str(peer)
+    return host in ("127.0.0.1", "::1", "localhost")
 
 
 class GatewayServer:
@@ -40,11 +54,15 @@ class GatewayServer:
         self._registry = registry or {}
         self._registry_provider = registry_provider
         self.access_token = access_token or ""
+        self.balances = balance_mod.BalanceTracker()
+        # 30 秒去重缓存：同协议同请求体短时间内只打一次上游
+        self.cache: dict[str, tuple[float, int, dict, bytes]] = {}
         self.app = web.Application(client_max_size=64 * 1024 * 1024)
         self.app.router.add_post("/jev/{protocol}", self.handle_relay)
         self.app.router.add_post("/v1/systemone", self.handle_alias)
         self.app.router.add_post("/v1/decisions", self.handle_alias)
         self.app.router.add_get("/jev", self.handle_list)
+        self.app.router.add_get("/jev/balance", self.handle_balance)
         self.app.router.add_get("/health", self.handle_health)
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -80,7 +98,14 @@ class GatewayServer:
 
     # ── 处理器 ──────────────────────────────────────────────────
     def _authorized(self, request: web.Request) -> bool:
+        """令牌只约束非本机来源。
+
+        插件客户端只填「代理地址 + 协议名」两项，令牌由网关自己掌握；
+        绑到 0.0.0.0 暴露给局域网时，非本机来源必须带对令牌。
+        """
         if not self.access_token:
+            return True
+        if _is_loopback(request):
             return True
         return request.headers.get(TOKEN_HEADER, "") == self.access_token
 
@@ -97,6 +122,31 @@ class GatewayServer:
                 item["primary"] = index == 0
                 items.append(item)
         return _json({"status": "ok", "entries": items})
+
+    async def handle_balance(self, request: web.Request) -> web.Response:
+        """已记录的余额；配了自定义余额地址的入口顺带去查一次。"""
+        balances = self.balances.snapshot()
+        for protocol, group in self.registry.items():
+            entry = group[0]
+            if not entry.balance_url:
+                continue
+            unit, value, error = await balance_mod.query_custom(entry)
+            if value is not None:
+                balances[protocol] = {
+                    "unit": unit,
+                    "value": value,
+                    "source": "custom",
+                    "updated_at": time.time(),
+                }
+            elif protocol not in balances:
+                balances[protocol] = {
+                    "unit": None,
+                    "value": None,
+                    "source": "custom",
+                    "error": error,
+                    "updated_at": time.time(),
+                }
+        return _json({"status": "ok", "balances": balances})
 
     async def handle_alias(self, request: web.Request) -> web.Response:
         protocol = "systemone" if request.path.endswith("/systemone") else "decisions"
@@ -121,15 +171,34 @@ class GatewayServer:
             )
         body = await request.read()
         headers = dict(request.headers)
+
+        cache_key = f"{protocol}|{hashlib.sha256(body or b'').hexdigest()}"
+        now = time.monotonic()
+        cached = self.cache.get(cache_key)
+        if cached and now - cached[0] < CACHE_TTL:
+            _, status, resp_headers, resp_body = cached
+            return web.Response(body=resp_body, status=status, headers=resp_headers or None)
+
         last: tuple[int, dict[str, str], bytes] = (502, {}, b'{"error":"no upstream"}')
         for entry in group:
             last = await relay.forward(entry, request.method, headers, body)
-            status = last[0]
+            status, resp_headers, resp_body = last
+            self.balances.record_response(protocol, resp_headers or {}, resp_body or b"")
+            last = (status, resp_headers, resp_body)
             if status < 500 or status not in FAILOVER_STATUSES:
                 break
         status, resp_headers, resp_body = last
+        if status == 200:
+            self.cache[cache_key] = (now, status, resp_headers or {}, resp_body)
+            self._trim_cache()
         return web.Response(
             body=resp_body,
             status=status,
             headers=resp_headers or None,
         )
+
+    def _trim_cache(self) -> None:
+        now = time.monotonic()
+        stale = [k for k, v in self.cache.items() if now - v[0] >= CACHE_TTL]
+        for key in stale:
+            self.cache.pop(key, None)
