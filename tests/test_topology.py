@@ -91,7 +91,9 @@ class TestBuildGraph:
         api = [n for n in graph["nodes"] if n["kind"] == "api"][0]
         assert api["healthy"] is True
         assert api["requests"] == 4
-        assert api["meta"]["success"] == 3
+        # 元数据是汉化的展示字段
+        assert api["meta"]["成功次数"] == 3
+        assert api["meta"]["状态"] == "正常"
 
     def test_unhealthy_entry_is_marked(self):
         tracker = topology_mod.ClientTracker()
@@ -131,3 +133,62 @@ class TestNodeIdMatchesEntryList:
             entry_id = node["id"].removeprefix("api:")
             assert entry_id in by_id, f"{node['id']} 在入口列表里找不到对应项"
             assert by_id[entry_id]["protocol"] == node["label"]
+
+
+class TestBalanceOnGraph:
+    """余额要能在图上看到。"""
+
+    def _registry(self):
+        return entry_mod.build_registry(
+            [{"protocol": "a", "kind": "systemone", "base_url": "https://a"}]
+        )
+
+    def test_api_node_carries_balance(self):
+        graph = topology_mod.build_graph(
+            self._registry(),
+            topology_mod.ClientTracker(),
+            balances={"a#0": {"unit": "usd", "value": 4.5, "source": "custom"}},
+        )
+        api = [n for n in graph["nodes"] if n["kind"] == "api"][0]
+        assert api["meta"]["余额"] == "余额 $4.50"
+        assert api["meta"]["余额来源"] == "自定义查询"
+        assert api["sublabel"] == "余额 $4.50"
+
+    def test_tokens_balance_is_formatted(self):
+        graph = topology_mod.build_graph(
+            self._registry(),
+            topology_mod.ClientTracker(),
+            balances={"a#0": {"unit": "tokens", "value": 184320, "source": "response"}},
+        )
+        api = [n for n in graph["nodes"] if n["kind"] == "api"][0]
+        assert api["meta"]["余额"] == "余额 184,320 tokens"
+        assert api["meta"]["余额来源"] == "响应里带的"
+
+    def test_missing_balance_says_unknown(self):
+        graph = topology_mod.build_graph(self._registry(), topology_mod.ClientTracker())
+        api = [n for n in graph["nodes"] if n["kind"] == "api"][0]
+        assert api["sublabel"] == "余额未知"
+
+    def test_client_node_has_call_count_sublabel(self):
+        tracker = topology_mod.ClientTracker()
+        tracker.record("astrbot_plugin_soupai", "systemone")
+        tracker.record("astrbot_plugin_soupai", "systemone")
+        graph = topology_mod.build_graph(self._registry(), tracker)
+        client = [n for n in graph["nodes"] if n["kind"] == "client"][0]
+        assert client["sublabel"] == "2 次调用"
+        assert client["meta"]["调用次数"] == 2
+
+
+class TestChineseMeta:
+    """详情里的字段名要是中文。"""
+
+    def test_meta_keys_are_chinese(self):
+        tracker = topology_mod.ClientTracker()
+        tracker.record("astrbot_plugin_soupai", "systemone")
+        registry = entry_mod.build_registry(
+            [{"protocol": "a", "kind": "systemone", "base_url": "https://a"}]
+        )
+        graph = topology_mod.build_graph(registry, tracker, gateway={"host": "0.0.0.0", "port": 8770})
+        for node in graph["nodes"]:
+            for key in node.get("meta", {}):
+                assert not key.isascii(), f"{node['kind']} 节点的字段名 {key} 没汉化"

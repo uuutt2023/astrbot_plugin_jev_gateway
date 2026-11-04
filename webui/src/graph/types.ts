@@ -7,6 +7,8 @@ export interface GraphNode {
   kind: NodeKind
   label: string
   detail?: string
+  /** 常显在标签下面的副标题，比如余额 */
+  sublabel?: string
   /** 流量权重，决定节点大小与边粗细 */
   weight?: number
   /** API 入口是否健康 */

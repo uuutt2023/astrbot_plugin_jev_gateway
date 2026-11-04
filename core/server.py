@@ -132,25 +132,26 @@ class GatewayServer:
         return _json({"status": "ok", "entries": items})
 
     async def handle_balance(self, request: web.Request) -> web.Response:
-        """已记录的余额；配了自定义余额地址的入口顺带去查一次。"""
+        """各入口的余额；配了自定义余额地址的入口顺带去查一次。"""
         balances = self.balances.snapshot()
-        for protocol, group in self.registry.items():
-            entry = group[0]
+        for entry in self._all_entries():
             if not entry.balance_url:
                 continue
             unit, value, error = await balance_mod.query_custom(entry)
             if value is not None:
-                balances[protocol] = {
+                balances[entry.id] = {
                     "unit": unit,
                     "value": value,
                     "source": "custom",
+                    "protocol": entry.protocol,
                     "updated_at": time.time(),
                 }
-            elif protocol not in balances:
-                balances[protocol] = {
+            elif entry.id not in balances:
+                balances[entry.id] = {
                     "unit": None,
                     "value": None,
                     "source": "custom",
+                    "protocol": entry.protocol,
                     "error": error,
                     "updated_at": time.time(),
                 }
@@ -212,7 +213,8 @@ class GatewayServer:
             last = await relay.forward(entry, request.method, headers, body)
             status, resp_headers, resp_body = last
             elapsed = time.monotonic() - started
-            self.balances.record_response(protocol, resp_headers or {}, resp_body or b"")
+            # 余额记在具体入口上：同协议的多条入口余额各算各的
+            self.balances.record_response(entry.id, resp_headers or {}, resp_body or b"")
             last = (status, resp_headers, resp_body)
             if status == 200:
                 self.balancer.record_success(entry.id, elapsed)

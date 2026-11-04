@@ -116,6 +116,7 @@ class GatewayAPI:
             server.registry,
             server.clients,
             server.balancer.snapshot(),
+            server.balances.snapshot(),
             gateway={
                 "host": items_cfg.get("host", "127.0.0.1"),
                 "port": items_cfg.get("port", 8770),

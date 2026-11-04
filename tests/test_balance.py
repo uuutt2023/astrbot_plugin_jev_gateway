@@ -118,3 +118,17 @@ async def test_query_custom_http_error():
     await client.aclose()
     assert value is None
     assert "HTTP 500" in error
+
+
+class TestBalancePerEntry:
+    """同一协议登记多条入口时，余额要各记各的。"""
+
+    def test_same_protocol_entries_keep_separate_balances(self):
+        from astrbot_plugin_jev_gateway.core.balance import BalanceTracker
+
+        tracker = BalanceTracker()
+        tracker.record("a#0", "usd", 1.0)
+        tracker.record("a#1", "usd", 2.0)
+        snapshot = tracker.snapshot()
+        assert snapshot["a#0"]["value"] == 1.0
+        assert snapshot["a#1"]["value"] == 2.0

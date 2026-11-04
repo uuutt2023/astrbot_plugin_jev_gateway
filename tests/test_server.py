@@ -261,3 +261,32 @@ async def test_request_without_client_header_is_not_recorded(monkeypatch):
         assert server.clients.snapshot() == []
     finally:
         await test_client.close()
+
+
+async def test_balance_is_recorded_per_entry(monkeypatch):
+    """同协议的两条入口，余额各记各的，不能混。"""
+    registry = entries.build_registry(
+        [
+            {"protocol": "p", "kind": "systemone", "base_url": "https://a", "priority": 10},
+            {"protocol": "p2", "kind": "systemone", "base_url": "https://b", "priority": 20},
+        ]
+    )
+    server = GatewayServer(registry=registry)
+
+    async def fake_forward(entry, method, headers, body):
+        # 第一条返回 503 触发故障转移，第二条才真的成功
+        if entry.base_url == "https://a":
+            return 503, {"X-Tokens-Remaining": "111"}, b'{"error":"boom"}'
+        return 200, {"X-Tokens-Remaining": "222"}, b'{"ok":true}'
+
+    monkeypatch.setattr("astrbot_plugin_jev_gateway.core.server.relay.forward", fake_forward)
+    test_client = TestClient(TestServer(server.app))
+    await test_client.start_server()
+    try:
+        await test_client.post("/jev/systemone", data=b"{}")
+    finally:
+        await test_client.close()
+
+    snapshot = server.balances.snapshot()
+    values = {key: item["value"] for key, item in snapshot.items()}
+    assert set(values.values()) == {111.0, 222.0}, values

@@ -63,6 +63,31 @@ class ClientTracker:
         return rows
 
 
+def format_balance(unit: str | None, value: float | None) -> str:
+    """把余额格式成人话，给图上的副标题用。"""
+    if value is None:
+        return "余额未知"
+    if unit == "tokens":
+        return f"余额 {value:,.0f} tokens"
+    if unit == "usd":
+        return f"余额 ${value:,.2f}"
+    return f"余额 {value:g}"
+
+
+def _source_text(source: str) -> str:
+    if source == "custom":
+        return "自定义查询"
+    if source == "response":
+        return "响应里带的"
+    return source or "—"
+
+
+def _time_text(timestamp: float) -> str:
+    if not timestamp:
+        return "—"
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+
+
 def _client_label(name: str) -> str:
     """插件名太长，界面上只留好认的那截。"""
     for prefix in ("astrbot_plugin_", "astrbot_plugin-", "plugin_"):
@@ -75,14 +100,16 @@ def build_graph(
     registry: dict[str, list],
     clients: ClientTracker,
     stats: dict | None = None,
+    balances: dict | None = None,
     gateway: dict | None = None,
 ) -> dict:
     """拼出前端要的图结构。
 
     registry 是入口表（协议名 → 入口列表），clients 是客户端登记表，
-    stats 是各入口的成败统计，gateway 是网关自己的信息。
+    stats 是各入口的成败统计，balances 是各入口的余额，gateway 是网关自己的信息。
     """
     stats = stats or {}
+    balances = balances or {}
     gateway = gateway or {}
 
     nodes: list[dict] = []
@@ -95,9 +122,9 @@ def build_graph(
             "label": "Jev 决策网关",
             "detail": gateway.get("advertised_url") or gateway.get("host") or "",
             "meta": {
-                "host": gateway.get("host", ""),
-                "port": gateway.get("port", 0),
-                "advertised_url": gateway.get("advertised_url", ""),
+                "监听地址": gateway.get("host", ""),
+                "监听端口": gateway.get("port", 0),
+                "对外地址": gateway.get("advertised_url", ""),
             },
             "weight": 0,
         }
@@ -107,6 +134,7 @@ def build_graph(
         for entry in group:
             node_id = f"api:{entry.id}"
             stat = stats.get(entry.id) or {}
+            balance = balances.get(entry.id) or {}
             nodes.append(
                 {
                     "id": node_id,
@@ -117,16 +145,20 @@ def build_graph(
                     "healthy": stat.get("healthy", True),
                     "requests": stat.get("success", 0) + stat.get("failure", 0),
                     "weight": max(1, entry.weight),
+                    # 图上一直显示的副标题：余额
+                    "sublabel": format_balance(balance.get("unit"), balance.get("value")),
                     "meta": {
-                        "protocol": entry.kind,
-                        "url": entry.url,
-                        "priority": entry.priority,
-                        "weight": entry.weight,
-                        "success": stat.get("success", 0),
-                        "failure": stat.get("failure", 0),
-                        "failure_rate": stat.get("failure_rate", 0.0),
-                        "avg_latency": stat.get("avg_latency", 0.0),
-                        "healthy": stat.get("healthy", True),
+                        "协议类型": entry.kind,
+                        "接口地址": entry.url,
+                        "优先级": entry.priority,
+                        "权重": entry.weight,
+                        "成功次数": stat.get("success", 0),
+                        "失败次数": stat.get("failure", 0),
+                        "失败率": stat.get("failure_rate", 0.0),
+                        "平均耗时": stat.get("avg_latency", 0.0),
+                        "状态": "正常" if stat.get("healthy", True) else "异常",
+                        "余额": format_balance(balance.get("unit"), balance.get("value")),
+                        "余额来源": _source_text(balance.get("source", "")),
                     },
                 }
             )
@@ -151,13 +183,14 @@ def build_graph(
                 "active": client["active"],
                 "requests": client["requests"],
                 "weight": max(1, client["requests"]),
+                "sublabel": f"{client['requests']} 次调用",
                 "meta": {
-                    "name": client["name"],
-                    "requests": client["requests"],
-                    "errors": client["errors"],
-                    "last_seen": client["last_seen"],
-                    "active": client["active"],
-                    "protocols": ", ".join(sorted(client["protocols"])),
+                    "插件名": client["name"],
+                    "调用次数": client["requests"],
+                    "错误次数": client["errors"],
+                    "使用协议": ", ".join(sorted(client["protocols"])) or "—",
+                    "最近调用": _time_text(client["last_seen"]),
+                    "状态": "活跃" if client["active"] else "不活跃",
                 },
             }
         )

@@ -73,24 +73,25 @@ class BalanceTracker:
     def __init__(self):
         self._balances: dict[str, dict[str, Any]] = {}
 
-    def record(self, protocol: str, unit: str | None, value: float | None,
+    def record(self, key: str, unit: str | None, value: float | None,
                source: str = "response") -> None:
+        """记一个入口的余额。key 用入口 id（协议名#序号），同一协议的多条入口各记各的。"""
         if unit is None or value is None:
             return
-        self._balances[protocol] = {
+        self._balances[key] = {
             "unit": unit,
             "value": value,
             "source": source,
             "updated_at": time.time(),
         }
 
-    def record_response(self, protocol: str, headers: dict[str, str], body: bytes) -> None:
+    def record_response(self, key: str, headers: dict[str, str], body: bytes) -> None:
         unit, value = extract_from_response(headers, body)
         if unit is not None:
-            self.record(protocol, unit, value)
+            self.record(key, unit, value)
 
-    def get(self, protocol: str) -> dict[str, Any] | None:
-        return self._balances.get(protocol)
+    def get(self, key: str) -> dict[str, Any] | None:
+        return self._balances.get(key)
 
     def snapshot(self) -> dict[str, dict[str, Any]]:
         return dict(self._balances)

@@ -25,6 +25,7 @@ interface ScreenNode {
   sy: number
   sr: number
   color: string
+  sublabel: string
   isHub: boolean
   isHovered: boolean
   isSelected: boolean
@@ -196,6 +197,7 @@ export class GraphRenderer {
         sy: p.y,
         sr: Math.max(1.6, sr),
         color: nodeColor(node),
+        sublabel: node.sublabel || '',
         isHub,
         isHovered: node.id === state.hoverId,
         isSelected: node.id === state.selectedId,
@@ -321,15 +323,23 @@ export class GraphRenderer {
     }
     ctx.fillText(label, labelX, sn.sy)
 
-    // 副信息只在悬停或选中时显示
+    // 副标题常显（余额、调用次数），悬停时再补一行运行状态
+    const metaFs = Math.round(clamp(CFG.NODE_META_SIZE * scale, 8, 12))
+    let metaY = sn.sy + fontSize / 2 + 3
+    if (sn.sublabel) {
+      ctx.fillStyle = sn.isMuted ? '#a9b0ba' : '#6b7280'
+      ctx.font = `${metaFs}px "SFMono-Regular", Consolas, monospace`
+      ctx.textBaseline = 'top'
+      ctx.fillText(sn.sublabel, labelX, metaY)
+      metaY += metaFs + 2
+    }
     if (sn.isHovered || sn.isSelected) {
       const meta = this.metaText(sn.node)
       if (meta) {
-        const metaFs = Math.round(clamp(CFG.NODE_META_SIZE * scale, 8, 12))
         ctx.fillStyle = '#6b7280'
         ctx.font = `${metaFs}px "SFMono-Regular", Consolas, monospace`
         ctx.textBaseline = 'top'
-        ctx.fillText(meta, labelX, sn.sy + fontSize / 2 + 3)
+        ctx.fillText(meta, labelX, metaY)
       }
     }
     ctx.restore()
