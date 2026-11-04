@@ -20,6 +20,7 @@ from . import balance as balance_mod
 from . import balancer as balancer_mod
 from . import entries as entry_mod
 from . import relay
+from . import topology as topology_mod
 
 TOKEN_HEADER = "X-Jev-Gateway-Token"
 
@@ -60,6 +61,8 @@ class GatewayServer:
         self.access_token = access_token or ""
         self.balances = balance_mod.BalanceTracker()
         self.balancer = balancer_mod.Balancer()
+        # 记录调用过网关的客户端插件，供 WebUI 的拓扑图用
+        self.clients = topology_mod.ClientTracker()
         # 30 秒去重缓存：同协议同请求体短时间内只打一次上游
         self.cache: dict[str, tuple[float, int, dict, bytes]] = {}
         self.app = web.Application(client_max_size=64 * 1024 * 1024)
@@ -192,12 +195,14 @@ class GatewayServer:
             )
         body = await request.read()
         headers = dict(request.headers)
+        client_name = request.headers.get(topology_mod.CLIENT_HEADER, "")
 
         cache_key = f"{protocol}|{hashlib.sha256(body or b'').hexdigest()}"
         now = time.monotonic()
         cached = self.cache.get(cache_key)
         if cached and now - cached[0] < CACHE_TTL:
             _, status, resp_headers, resp_body = cached
+            self.clients.record(client_name, protocol, ok=status == 200)
             return web.Response(body=resp_body, status=status, headers=resp_headers or None)
 
         candidates = await self.balancer.candidates(protocol, group)
@@ -219,6 +224,7 @@ class GatewayServer:
             # 400/422 之类是请求本身的问题，换入口也没用
             break
         status, resp_headers, resp_body = last
+        self.clients.record(client_name, protocol, ok=status == 200)
         if status == 200:
             self.cache[cache_key] = (now, status, resp_headers or {}, resp_body)
             self._trim_cache()

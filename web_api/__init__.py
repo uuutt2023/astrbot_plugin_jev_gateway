@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 from astrbot.api import logger
 
 from ..core import balancer as balancer_mod
+from ..core import topology as topology_mod
 
 try:
     from astrbot.api.web import error_response, json_response, request
@@ -104,6 +105,22 @@ class GatewayAPI:
                 },
             }
         )
+
+    async def get_topology(self):
+        """拓扑图数据：接入对象 → 网关 → API 入口。"""
+        server = self._plugin.server
+        items_cfg = self._plugin._items()
+        graph = topology_mod.build_graph(
+            server.registry,
+            server.clients,
+            server.balancer.snapshot(),
+            gateway={
+                "host": items_cfg.get("host", "127.0.0.1"),
+                "port": items_cfg.get("port", 8770),
+                "advertised_url": items_cfg.get("advertised_url", ""),
+            },
+        )
+        return _ok(graph)
 
     async def save_settings(self):
         """改网关级设置：监听地址、端口、对外地址、访问令牌。"""
@@ -318,6 +335,12 @@ def register(context, plugin) -> None:
             api.get_balance,
             ["GET"],
             "查询各入口的余额",
+        ),
+        (
+            "/astrbot_plugin_jev_gateway/topology",
+            api.get_topology,
+            ["GET"],
+            "获取拓扑图数据（接入对象 / 网关 / API 入口）",
         ),
     ]
     for path, handler, methods, description in routes:

@@ -275,3 +275,26 @@ class TestGatewaySettings:
         )
         result = await _call(api_obj.save_settings)
         assert _is_error(result)
+
+
+async def test_topology_endpoint(tmp_path):
+    """拓扑接口给出接入对象、网关与 API 入口三类节点。"""
+    plugin = _plugin(tmp_path)
+    api = GatewayAPI(plugin)
+    plugin.server.clients.record("astrbot_plugin_soupai", "systemone")
+
+    result = await api.get_topology()
+    data = result["data"]
+    kinds = [node["kind"] for node in data["nodes"]]
+    assert "gateway" in kinds
+    assert "api" in kinds
+    assert "client" in kinds
+    assert any(node["label"] == "soupai" for node in data["nodes"])
+
+
+async def test_topology_endpoint_without_clients(tmp_path):
+    plugin = _plugin(tmp_path)
+    api = GatewayAPI(plugin)
+    data = (await api.get_topology())["data"]
+    assert all(node["kind"] != "client" for node in data["nodes"])
+    assert len(data["nodes"]) >= 2

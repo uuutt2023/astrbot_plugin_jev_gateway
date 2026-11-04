@@ -213,3 +213,51 @@ async def test_registry_provider_is_used_each_request(monkeypatch):
         assert (await resp.text()) == "second"
     finally:
         await test_client.close()
+
+
+async def test_client_header_is_recorded(monkeypatch):
+    """客户端自报家门，网关记下来给拓扑图用。"""
+    registry = entries.build_registry(
+        [{"protocol": "p", "base_url": "https://primary"}]
+    )
+    server = GatewayServer(registry=registry)
+
+    async def fake_forward(entry, method, headers, body):
+        return 200, {}, b'{"ok":true}'
+
+    monkeypatch.setattr("astrbot_plugin_jev_gateway.core.server.relay.forward", fake_forward)
+    test_client = TestClient(TestServer(server.app))
+    await test_client.start_server()
+    try:
+        resp = await test_client.post(
+            "/jev/p",
+            data=b"{}",
+            headers={"X-Jev-Gateway-Client": "astrbot_plugin_soupai"},
+        )
+        assert resp.status == 200
+        rows = server.clients.snapshot()
+        assert len(rows) == 1
+        assert rows[0]["name"] == "astrbot_plugin_soupai"
+        assert rows[0]["requests"] == 1
+        assert rows[0]["protocols"] == {"p": 1}
+    finally:
+        await test_client.close()
+
+
+async def test_request_without_client_header_is_not_recorded(monkeypatch):
+    registry = entries.build_registry(
+        [{"protocol": "p", "base_url": "https://primary"}]
+    )
+    server = GatewayServer(registry=registry)
+
+    async def fake_forward(entry, method, headers, body):
+        return 200, {}, b'{"ok":true}'
+
+    monkeypatch.setattr("astrbot_plugin_jev_gateway.core.server.relay.forward", fake_forward)
+    test_client = TestClient(TestServer(server.app))
+    await test_client.start_server()
+    try:
+        await test_client.post("/jev/p", data=b"{}")
+        assert server.clients.snapshot() == []
+    finally:
+        await test_client.close()

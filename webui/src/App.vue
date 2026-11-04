@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   NButton,
   NCard,
@@ -19,6 +19,8 @@ import {
   NAlert,
   NText,
 } from 'naive-ui'
+import TopologyGraph from '@/components/TopologyGraph.vue'
+import type { GraphEdge, GraphNode } from '@/graph/types'
 import { useBridge } from '@/composables/useBridge'
 import { detectThemeMode, themeOverrides } from '@/theme'
 
@@ -87,6 +89,14 @@ const testQuestions = ref(
 )
 const testResult = ref<any>(null)
 const testBusy = ref(false)
+
+// 拓扑图
+const topologyNodes = ref<GraphNode[]>([])
+const topologyEdges = ref<GraphEdge[]>([])
+const topologyGateway = ref<Record<string, any>>({})
+const topologySelected = ref<GraphNode | null>(null)
+const topologyAuto = ref(false)
+let topologyTimer: number | null = null
 
 const KIND_OPTIONS = [
   { label: 'SystemOne（官方 Jev / TypeSafe）', value: 'systemone' },
@@ -227,6 +237,36 @@ async function runTest() {
   }
 }
 
+function onTopologySelect(node: GraphNode | null) {
+  console.log('[app] onTopologySelect', node && node.id)
+  topologySelected.value = node
+}
+
+async function loadTopology() {
+  try {
+    const data = (await bridge.apiGet('topology')) as any
+    topologyNodes.value = data.nodes || []
+    topologyEdges.value = data.edges || []
+    topologyGateway.value = data.gateway || {}
+  } catch (e) {
+    // 拓扑取不到不影响别的页签
+  }
+}
+
+function stopTopologyTimer() {
+  if (topologyTimer !== null) {
+    window.clearInterval(topologyTimer)
+    topologyTimer = null
+  }
+}
+
+function toggleTopologyAuto(on: boolean) {
+  stopTopologyTimer()
+  if (on) {
+    topologyTimer = window.setInterval(loadTopology, 5000)
+  }
+}
+
 async function loadBalance() {
   try {
     const data = (await bridge.apiGet('balance')) as any
@@ -235,6 +275,20 @@ async function loadBalance() {
     toast.value = { type: 'error', text: `查余额失败：${e?.message || e}` }
   }
 }
+
+// 只有停留在拓扑页签时才轮询
+watch(tab, (value) => {
+  if (value === 'topology') {
+    loadTopology()
+    toggleTopologyAuto(topologyAuto.value)
+  } else {
+    stopTopologyTimer()
+  }
+})
+
+onBeforeUnmount(() => {
+  stopTopologyTimer()
+})
 
 onMounted(async () => {
   await bridge.init()
@@ -436,6 +490,45 @@ onMounted(async () => {
           </n-space>
         </n-tab-pane>
 
+        <!-- 拓扑 -->
+        <n-tab-pane name="topology" tab="拓扑">
+          <n-card size="small">
+            <template #header>
+              <n-space align="center" justify="space-between">
+                <n-text>接入对象 → 网关 → API 入口</n-text>
+                <n-space align="center">
+                  <n-switch v-model:value="topologyAuto" size="small" @update:value="toggleTopologyAuto">
+                    <template #checked>自动刷新</template>
+                    <template #unchecked>自动刷新</template>
+                  </n-switch>
+                  <n-button size="small" quaternary @click="loadTopology()">刷新</n-button>
+                </n-space>
+              </n-space>
+            </template>
+
+            <n-space vertical size="small">
+              <n-text depth="3" style="font-size: 12px">
+                接入对象由客户端插件在请求里自报（请求头 X-Jev-Gateway-Client）；没自报的客户端不会出现在图里。
+              </n-text>
+
+              <TopologyGraph
+                :nodes="topologyNodes"
+                :edges="topologyEdges"
+                @select="onTopologySelect"
+              />
+
+              <n-card v-if="topologySelected" size="small" :title="topologySelected.label">
+                <div class="kv">
+                  <template v-for="(value, key) in topologySelected.meta || {}" :key="key">
+                    <span class="k">{{ key }}</span>
+                    <span class="v">{{ value }}</span>
+                  </template>
+                </div>
+              </n-card>
+            </n-space>
+          </n-card>
+        </n-tab-pane>
+
         <!-- 余额 -->
         <n-tab-pane name="balance" tab="余额">
           <n-card size="small">
@@ -473,6 +566,23 @@ onMounted(async () => {
   padding: 6px 0;
   border-bottom: 1px solid var(--n-border-color, rgba(128, 128, 128, 0.16));
 }
+.kv {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 5px 14px;
+  font-size: 13px;
+  align-items: baseline;
+}
+
+.k {
+  color: #6b7280;
+}
+
+.v {
+  color: #2f343a;
+  word-break: break-all;
+}
+
 .json {
   margin: 0;
   padding: 10px;
