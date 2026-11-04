@@ -34,6 +34,24 @@
         "hint": "非本机来源访问时需要带 X-Jev-Gateway-Token 头；本机来的请求免检。客户端插件只填代理地址与协议名，不用填这里。",
         "default": ""
       },
+      "lb_strategy": {
+        "type": "string",
+        "description": "负载均衡策略",
+        "hint": "同一协议登记多个入口时怎么挑。优先级分层，层内按这个策略选。",
+        "options": [
+          "round_robin",
+          "random",
+          "weighted",
+          "least_failure"
+        ],
+        "labels": [
+          "轮询",
+          "随机",
+          "加权",
+          "最少失败"
+        ],
+        "default": "round_robin"
+      },
       "api_entries": {
         "type": "template_list",
         "description": "API 入口",
@@ -75,6 +93,18 @@
                 "type": "float",
                 "description": "超时（秒）",
                 "default": 10.0
+              },
+              "priority": {
+                "type": "int",
+                "description": "优先级",
+                "hint": "数字越小越优先。同一优先级内的入口由负载均衡策略挑选。",
+                "default": 100
+              },
+              "weight": {
+                "type": "int",
+                "description": "权重",
+                "hint": "仅「加权」策略生效，数字越大分到的请求越多。",
+                "default": 1
               },
               "balance_url": {
                 "type": "string",
@@ -127,6 +157,18 @@
                 "description": "超时（秒）",
                 "default": 10.0
               },
+              "priority": {
+                "type": "int",
+                "description": "优先级",
+                "hint": "数字越小越优先。同一优先级内的入口由负载均衡策略挑选。",
+                "default": 100
+              },
+              "weight": {
+                "type": "int",
+                "description": "权重",
+                "hint": "仅「加权」策略生效，数字越大分到的请求越多。",
+                "default": 1
+              },
               "balance_url": {
                 "type": "string",
                 "description": "余额查询地址",
@@ -178,6 +220,18 @@
                 "description": "超时（秒）",
                 "default": 10.0
               },
+              "priority": {
+                "type": "int",
+                "description": "优先级",
+                "hint": "数字越小越优先。同一优先级内的入口由负载均衡策略挑选。",
+                "default": 100
+              },
+              "weight": {
+                "type": "int",
+                "description": "权重",
+                "hint": "仅「加权」策略生效，数字越大分到的请求越多。",
+                "default": 1
+              },
               "balance_url": {
                 "type": "string",
                 "description": "余额查询地址",
@@ -203,7 +257,9 @@
             "endpoint_path": "",
             "timeout": 10.0,
             "balance_url": "",
-            "balance_field": ""
+            "balance_field": "",
+            "priority": 100,
+            "weight": 1
           }
         ]
       }

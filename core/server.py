@@ -17,6 +17,7 @@ import time
 from aiohttp import web
 
 from . import balance as balance_mod
+from . import balancer as balancer_mod
 from . import entries as entry_mod
 from . import relay
 
@@ -27,6 +28,9 @@ FAILOVER_STATUSES = {502, 503, 504}
 
 #: 去重缓存的存活时间（秒）
 CACHE_TTL = 30.0
+
+#: 算「这个入口自己出问题」的状态码：Key/余额/上游故障，换下一个入口有意义
+ENTRY_FAULT_STATUSES = {401, 402, 403, 500, 502, 503, 504, 529}
 
 
 def _json(payload: dict, status: int = 200) -> web.Response:
@@ -55,6 +59,7 @@ class GatewayServer:
         self._registry_provider = registry_provider
         self.access_token = access_token or ""
         self.balances = balance_mod.BalanceTracker()
+        self.balancer = balancer_mod.Balancer()
         # 30 秒去重缓存：同协议同请求体短时间内只打一次上游
         self.cache: dict[str, tuple[float, int, dict, bytes]] = {}
         self.app = web.Application(client_max_size=64 * 1024 * 1024)
@@ -148,6 +153,22 @@ class GatewayServer:
                 }
         return _json({"status": "ok", "balances": balances})
 
+    def _all_entries(self) -> list:
+        return [e for group in self.registry.values() for e in group]
+
+    def _entries_for(self, protocol: str) -> list:
+        """按协议类型找入口。
+
+        客户端下拉里选的就是协议类型（SystemOne / OpenAI Decisions / Custom），
+        同一类型可以登记多个入口，由负载均衡按优先级挑。没登记该类型时，
+        再按「协议名」找一次，兼容按名字寻址的旧配置。
+        """
+        registry = self.registry
+        by_kind = [e for e in self._all_entries() if e.kind == protocol]
+        if by_kind:
+            return by_kind
+        return list(registry.get(protocol) or [])
+
     async def handle_alias(self, request: web.Request) -> web.Response:
         protocol = "systemone" if request.path.endswith("/systemone") else "decisions"
         return await self._relay(request, protocol)
@@ -159,9 +180,9 @@ class GatewayServer:
     async def _relay(self, request: web.Request, protocol: str) -> web.Response:
         if not self._authorized(request):
             return _json({"error": "unauthorized"}, 401)
-        group = self.registry.get(protocol)
+        group = self._entries_for(protocol)
         if not group:
-            known = sorted(self.registry)
+            known = sorted({e.kind for e in self._all_entries()})
             return _json(
                 {
                     "error": f"protocol not registered: {protocol}",
@@ -179,14 +200,24 @@ class GatewayServer:
             _, status, resp_headers, resp_body = cached
             return web.Response(body=resp_body, status=status, headers=resp_headers or None)
 
+        candidates = await self.balancer.candidates(protocol, group)
         last: tuple[int, dict[str, str], bytes] = (502, {}, b'{"error":"no upstream"}')
-        for entry in group:
+        for entry in candidates:
+            started = time.monotonic()
             last = await relay.forward(entry, request.method, headers, body)
             status, resp_headers, resp_body = last
+            elapsed = time.monotonic() - started
             self.balances.record_response(protocol, resp_headers or {}, resp_body or b"")
             last = (status, resp_headers, resp_body)
-            if status < 500 or status not in FAILOVER_STATUSES:
+            if status == 200:
+                self.balancer.record_success(entry.id, elapsed)
                 break
+            if status in ENTRY_FAULT_STATUSES:
+                # 这个入口自己出了问题（Key/余额/上游），换下一个
+                self.balancer.record_failure(entry.id)
+                continue
+            # 400/422 之类是请求本身的问题，换入口也没用
+            break
         status, resp_headers, resp_body = last
         if status == 200:
             self.cache[cache_key] = (now, status, resp_headers or {}, resp_body)

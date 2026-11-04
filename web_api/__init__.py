@@ -12,6 +12,8 @@ from typing import Any, Dict, List
 
 from astrbot.api import logger
 
+from ..core import balancer as balancer_mod
+
 try:
     from astrbot.api.web import error_response, json_response, request
     HAS_WEB_API = True
@@ -47,6 +49,13 @@ async def _get_json() -> Dict:
     return data if isinstance(data, dict) else {}
 
 
+def _as_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _entry_payload(entry) -> Dict[str, Any]:
     return {
         "protocol": entry.protocol,
@@ -56,6 +65,8 @@ def _entry_payload(entry) -> Dict[str, Any]:
         "model": entry.model,
         "endpoint_path": entry.endpoint_path,
         "timeout": entry.timeout,
+        "priority": entry.priority,
+        "weight": entry.weight,
         "balance_url": entry.balance_url,
         "balance_field": entry.balance_field,
         "url": entry.url,
@@ -89,6 +100,7 @@ class GatewayAPI:
                     "port": items_cfg.get("port", 8770),
                     "advertised_url": items_cfg.get("advertised_url", ""),
                     "access_token_set": bool(items_cfg.get("access_token")),
+                    "lb_strategy": items_cfg.get("lb_strategy", "round_robin"),
                 },
             }
         )
@@ -112,6 +124,9 @@ class GatewayAPI:
             gateway["port"] = port if 1 <= port <= 65535 else 8770
         if "advertised_url" in payload:
             gateway["advertised_url"] = str(payload.get("advertised_url") or "").strip().rstrip("/")
+        if "lb_strategy" in payload:
+            strategy = str(payload.get("lb_strategy") or "round_robin").strip()
+            gateway["lb_strategy"] = strategy if strategy in balancer_mod.STRATEGIES else "round_robin"
         token = payload.get("access_token")
         if token is not None:
             # 留空表示不改原来的令牌
@@ -163,6 +178,8 @@ class GatewayAPI:
                     "model": str(item.get("model") or "").strip(),
                     "endpoint_path": str(item.get("endpoint_path") or "").strip(),
                     "timeout": timeout,
+                    "priority": _as_int(item.get("priority"), 100),
+                    "weight": _as_int(item.get("weight"), 1),
                     "balance_url": str(item.get("balance_url") or "").strip(),
                     "balance_field": str(item.get("balance_field") or "").strip(),
                 }

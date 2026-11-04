@@ -114,3 +114,34 @@ def test_gateway_plugin_reads_the_same_nesting(make_plugin):
     assert plugin._items()["port"] == conf["gateway"]["port"]
     assert plugin._items()["api_entries"] == conf["gateway"]["api_entries"]
     assert plugin._build_registry()["systemone"][0].url == "https://jevmodel.org/v1/systemone"
+
+
+def test_gateway_has_load_balancing_fields():
+    """网关级有策略下拉，入口级有优先级与权重。"""
+    schema = json.loads(SCHEMA_PATHS["jev_gateway"].read_text(encoding="utf-8"))
+    gateway = schema["gateway"]["items"]
+
+    strategy = gateway["lb_strategy"]
+    assert strategy["type"] == "string"
+    assert strategy["options"] == [
+        "round_robin",
+        "random",
+        "weighted",
+        "least_failure",
+    ]
+    assert len(strategy["labels"]) == len(strategy["options"])
+
+    templates = gateway["api_entries"]["templates"]
+    for key, meta in templates.items():
+        fields = meta["items"]
+        assert fields["priority"]["type"] == "int"
+        assert fields["weight"]["type"] == "int"
+        assert fields["priority"]["default"] == 100
+        assert fields["weight"]["default"] == 1
+
+
+def test_default_entry_carries_priority_and_weight():
+    schema = json.loads(SCHEMA_PATHS["jev_gateway"].read_text(encoding="utf-8"))
+    for entry in schema["gateway"]["items"]["api_entries"]["default"]:
+        assert "priority" in entry
+        assert "weight" in entry

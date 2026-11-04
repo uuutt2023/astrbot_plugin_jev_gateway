@@ -142,6 +142,34 @@ async def test_failover_to_next_entry(monkeypatch):
         await test_client.close()
 
 
+async def test_auth_failure_fails_over(monkeypatch):
+    """401 是这个入口的 Key 不对，换下一个入口有意义。"""
+    registry = entries.build_registry(
+        [
+            {"protocol": "p", "base_url": "https://primary"},
+            {"protocol": "p", "base_url": "https://backup"},
+        ]
+    )
+    server = GatewayServer(registry=registry)
+    tried = []
+
+    async def fake_forward(entry, method, headers, body):
+        tried.append(entry.base_url)
+        if entry.base_url == "https://primary":
+            return 401, {}, b'{"error":"unauthorized"}'
+        return 200, {}, b'{"ok":true}'
+
+    monkeypatch.setattr("astrbot_plugin_jev_gateway.core.server.relay.forward", fake_forward)
+    test_client = TestClient(TestServer(server.app))
+    await test_client.start_server()
+    try:
+        resp = await test_client.post("/jev/p", data=b"{}")
+        assert resp.status == 200
+        assert tried == ["https://primary", "https://backup"]
+    finally:
+        await test_client.close()
+
+
 async def test_no_failover_on_4xx(monkeypatch):
     registry = entries.build_registry(
         [
@@ -154,14 +182,14 @@ async def test_no_failover_on_4xx(monkeypatch):
 
     async def fake_forward(entry, method, headers, body):
         tried.append(entry.base_url)
-        return 401, {}, b'{"error":"unauthorized"}'
+        return 422, {}, b'{"error":"invalid request"}'
 
     monkeypatch.setattr("astrbot_plugin_jev_gateway.core.server.relay.forward", fake_forward)
     test_client = TestClient(TestServer(server.app))
     await test_client.start_server()
     try:
         resp = await test_client.post("/jev/p", data=b"{}")
-        assert resp.status == 401
+        assert resp.status == 422
         assert tried == ["https://primary"]
     finally:
         await test_client.close()

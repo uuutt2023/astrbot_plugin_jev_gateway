@@ -12,6 +12,7 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
+from .core import balancer as balancer_mod
 from .core import entries as entry_mod
 from .core.server import GatewayServer
 from .web_api import register as register_web_api
@@ -60,7 +61,11 @@ class JevGatewayPlugin(Star):
         return items if isinstance(items, dict) else gateway
 
     def _build_registry(self) -> dict[str, list[entry_mod.Entry]]:
-        return entry_mod.build_registry(self._items().get("api_entries"))
+        items = self._items()
+        strategy = str(items.get("lb_strategy") or "").strip()
+        if strategy in balancer_mod.STRATEGIES:
+            self.server.balancer.strategy = strategy
+        return entry_mod.build_registry(items.get("api_entries"))
 
     @property
     def endpoint_base(self) -> str:

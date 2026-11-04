@@ -35,6 +35,17 @@ class Entry:
     headers: dict[str, str] = field(default_factory=dict)
     balance_url: str = ""
     balance_field: str = ""
+    priority: int = 100
+    weight: int = 1
+    index: int = 0
+
+    @property
+    def id(self) -> str:
+        """入口的唯一标识。
+
+        同一协议可以登记多个入口，协议名不再唯一，所以带上配置里的序号。
+        """
+        return f"{self.protocol}#{self.index}"
 
     @property
     def url(self) -> str:
@@ -68,6 +79,8 @@ class Entry:
             "key": self.masked_key(),
             "balance_url": self.balance_url,
             "balance_field": self.balance_field,
+            "priority": self.priority,
+            "weight": self.weight,
         }
 
 
@@ -81,6 +94,13 @@ def _as_float(value, default: float) -> float:
 
 def _as_str(value) -> str:
     return str(value).strip() if value is not None else ""
+
+
+def _as_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def parse_entry(raw: dict) -> Entry | None:
@@ -108,6 +128,8 @@ def parse_entry(raw: dict) -> Entry | None:
         else {},
         balance_url=_as_str(raw.get("balance_url")),
         balance_field=_as_str(raw.get("balance_field")),
+        priority=_as_int(raw.get("priority"), 100),
+        weight=_as_int(raw.get("weight"), 1),
     )
 
 
@@ -116,10 +138,11 @@ def build_registry(raw_entries) -> dict[str, list[Entry]]:
     registry: dict[str, list[Entry]] = {}
     if not isinstance(raw_entries, list):
         return registry
-    for raw in raw_entries:
+    for index, raw in enumerate(raw_entries):
         entry = parse_entry(raw)
         if entry is None:
             continue
+        entry.index = index
         registry.setdefault(entry.protocol, []).append(entry)
     return registry
 

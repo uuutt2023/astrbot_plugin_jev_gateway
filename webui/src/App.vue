@@ -25,6 +25,8 @@ import { detectThemeMode, themeOverrides } from '@/theme'
 interface Entry {
   protocol: string
   kind: string
+  priority: number
+  weight: number
   base_url: string
   api_key: string
   model: string
@@ -56,8 +58,20 @@ const running = ref(false)
 const endpointBase = ref('')
 const accessTokenSet = ref(false)
 const entries = ref<Entry[]>([])
-const settings = ref({ host: '127.0.0.1', port: 8770, advertised_url: '', access_token_set: false })
-const draft = ref({ host: '127.0.0.1', port: 8770, advertised_url: '', access_token: '' })
+const settings = ref({
+  host: '127.0.0.1', port: 8770, advertised_url: '', access_token_set: false,
+  lb_strategy: 'round_robin',
+})
+const draft = ref({
+  host: '127.0.0.1', port: 8770, advertised_url: '', access_token: '', lb_strategy: 'round_robin',
+})
+
+const STRATEGY_OPTIONS = [
+  { label: '轮询', value: 'round_robin' },
+  { label: '随机', value: 'random' },
+  { label: '加权', value: 'weighted' },
+  { label: '最少失败', value: 'least_failure' },
+]
 
 const balances = ref<Record<string, Balance>>({})
 const testProtocol = ref('')
@@ -102,6 +116,8 @@ function blankEntry(): Entry {
     model: 'jev-latest',
     endpoint_path: '',
     timeout: 10,
+    priority: 100,
+    weight: 1,
     balance_url: '',
     balance_field: '',
   }
@@ -125,12 +141,14 @@ async function loadEntries() {
       port: st.port || 8770,
       advertised_url: st.advertised_url || '',
       access_token_set: !!st.access_token_set,
+      lb_strategy: st.lb_strategy || 'round_robin',
     }
     draft.value = {
       host: settings.value.host,
       port: settings.value.port,
       advertised_url: settings.value.advertised_url,
       access_token: '',
+      lb_strategy: settings.value.lb_strategy,
     }
     if (!testProtocol.value && entries.value.length) {
       testProtocol.value = entries.value[0].protocol
@@ -273,6 +291,11 @@ onMounted(async () => {
                     </n-form-item>
                   </n-grid-item>
                   <n-grid-item>
+                    <n-form-item label="负载均衡策略" label-placement="top" :show-feedback="false">
+                      <n-select v-model:value="draft.lb_strategy" :options="STRATEGY_OPTIONS" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item>
                     <n-form-item label="访问令牌" label-placement="top" :show-feedback="false">
                       <n-input
                         v-model:value="draft.access_token"
@@ -297,8 +320,8 @@ onMounted(async () => {
                 </template>
                 <n-grid :x-gap="12" :y-gap="6" cols="1 600 2 900 3">
                   <n-grid-item>
-                    <n-form-item label="协议名" label-placement="top" :show-feedback="false">
-                      <n-input v-model:value="entry.protocol" placeholder="systemone" />
+                    <n-form-item label="入口名称" label-placement="top" :show-feedback="false">
+                      <n-input v-model:value="entry.protocol" placeholder="主 Key / 备用 Key" />
                     </n-form-item>
                   </n-grid-item>
                   <n-grid-item>
@@ -309,6 +332,16 @@ onMounted(async () => {
                   <n-grid-item>
                     <n-form-item label="超时（秒）" label-placement="top" :show-feedback="false">
                       <n-input-number v-model:value="entry.timeout" :min="1" :max="300" style="width: 100%" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item>
+                    <n-form-item label="优先级" label-placement="top" :show-feedback="false">
+                      <n-input-number v-model:value="entry.priority" :min="1" :max="999" style="width: 100%" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item>
+                    <n-form-item label="权重" label-placement="top" :show-feedback="false">
+                      <n-input-number v-model:value="entry.weight" :min="0" :max="999" style="width: 100%" />
                     </n-form-item>
                   </n-grid-item>
                   <n-grid-item>
