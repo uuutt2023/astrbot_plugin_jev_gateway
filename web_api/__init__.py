@@ -78,16 +78,53 @@ class GatewayAPI:
                 payload = _entry_payload(entry)
                 payload["primary"] = index == 0
                 items.append(payload)
+        items_cfg = self._plugin._items()
         return _ok(
             {
                 "entries": items,
                 "running": bool(self._plugin.server.port),
                 "endpoint_base": self._plugin.endpoint_base,
-                "host": self._plugin._items().get("host", "127.0.0.1"),
-                "port": self._plugin._items().get("port", 8770),
-                "access_token_set": bool(self._plugin._items().get("access_token")),
+                "settings": {
+                    "host": items_cfg.get("host", "127.0.0.1"),
+                    "port": items_cfg.get("port", 8770),
+                    "advertised_url": items_cfg.get("advertised_url", ""),
+                    "access_token_set": bool(items_cfg.get("access_token")),
+                },
             }
         )
+
+    async def save_settings(self):
+        """改网关级设置：监听地址、端口、对外地址、访问令牌。"""
+        payload = await _get_json()
+        config = self._plugin.config
+        gateway = config.get("gateway")
+        if not isinstance(gateway, dict):
+            gateway = {}
+            config["gateway"] = gateway
+
+        if "host" in payload:
+            gateway["host"] = str(payload.get("host") or "127.0.0.1").strip()
+        if "port" in payload:
+            try:
+                port = int(payload.get("port") or 8770)
+            except (TypeError, ValueError):
+                return _err("端口必须是数字")
+            gateway["port"] = port if 1 <= port <= 65535 else 8770
+        if "advertised_url" in payload:
+            gateway["advertised_url"] = str(payload.get("advertised_url") or "").strip().rstrip("/")
+        token = payload.get("access_token")
+        if token is not None:
+            # 留空表示不改原来的令牌
+            gateway["access_token"] = str(token) if str(token) else gateway.get("access_token", "")
+
+        try:
+            config.save_config()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"[jev_gateway] 配置落盘失败: {exc}", exc_info=True)
+            return _err(f"配置落盘失败：{exc}")
+
+        await self._plugin.restart_server()
+        return _ok({"endpoint_base": self._plugin.endpoint_base}, message="已保存并重启网关")
 
     async def save_entries(self):
         payload = await _get_json()
@@ -240,6 +277,12 @@ def register(context, plugin) -> None:
             api.get_entries,
             ["GET"],
             "网关入口列表与运行状态",
+        ),
+        (
+            "/astrbot_plugin_jev_gateway/settings/save",
+            api.save_settings,
+            ["POST"],
+            "保存网关监听设置（地址、端口、对外地址、令牌）",
         ),
         (
             "/astrbot_plugin_jev_gateway/entries/save",

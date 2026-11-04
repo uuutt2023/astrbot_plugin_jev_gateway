@@ -13,7 +13,7 @@
       "host": {
         "type": "string",
         "description": "监听地址",
-        "hint": "默认只监听本机。改成 0.0.0.0 会暴露给局域网里的其他程序。",
+        "hint": "默认只监听本机。跨容器或跨机器访问要改成 0.0.0.0，并把「对外地址」填成别的容器/机器能访问到的地址。",
         "default": "127.0.0.1"
       },
       "port": {
@@ -21,6 +21,12 @@
         "description": "监听端口",
         "hint": "被占用时网关会启动失败并在日志里报错。",
         "default": 8770
+      },
+      "advertised_url": {
+        "type": "string",
+        "description": "对外地址",
+        "hint": "别的插件填的网关地址。Docker 里填容器名，如 http://astrbot:8770；留空则按监听地址推本机地址。",
+        "default": ""
       },
       "access_token": {
         "type": "string",

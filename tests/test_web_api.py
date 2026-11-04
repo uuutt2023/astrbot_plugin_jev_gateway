@@ -41,9 +41,10 @@ def _plugin(tmp_path, entries=None, host="127.0.0.1", port=8770):
 
 
 @pytest.fixture
-def api(tmp_path):
+async def api(tmp_path):
     plugin = _plugin(tmp_path)
-    return GatewayAPI(plugin), plugin
+    yield GatewayAPI(plugin), plugin
+    await plugin.server.stop()
 
 
 async def test_entries_list_masks_key(api):
@@ -206,3 +207,71 @@ def _json_stub(payload):
         return payload
 
     return _get_json
+
+
+class TestGatewaySettings:
+    """网关级设置：监听地址、端口、对外地址、令牌。"""
+
+    async def test_entries_returns_settings(self, api):
+        api_obj, _ = api
+        data = _data(await _call(api_obj.get_entries))
+        assert data["settings"]["host"] == "127.0.0.1"
+        assert data["settings"]["port"] == 8770
+        assert data["settings"]["advertised_url"] == ""
+        assert data["settings"]["access_token_set"] is False
+
+    async def test_save_settings_updates_config(self, api, monkeypatch):
+        api_obj, plugin = api
+        monkeypatch.setattr(
+            "astrbot_plugin_jev_gateway.web_api._get_json",
+            _json_stub(
+                {
+                    "host": "0.0.0.0",
+                    "port": 9999,
+                    "advertised_url": "http://astrbot:9999",
+                }
+            ),
+        )
+        result = await _call(api_obj.save_settings)
+        assert not _is_error(result)
+        gw = plugin.config["gateway"]
+        assert gw["host"] == "0.0.0.0"
+        assert gw["port"] == 9999
+        assert gw["advertised_url"] == "http://astrbot:9999"
+
+    async def test_save_settings_keeps_token_when_blank(self, api, monkeypatch):
+        api_obj, plugin = api
+        plugin.config["gateway"]["access_token"] = "old-token"
+        monkeypatch.setattr(
+            "astrbot_plugin_jev_gateway.web_api._get_json",
+            _json_stub({"access_token": ""}),
+        )
+        await _call(api_obj.save_settings)
+        assert plugin.config["gateway"]["access_token"] == "old-token"
+
+    async def test_save_settings_sets_new_token(self, api, monkeypatch):
+        api_obj, plugin = api
+        monkeypatch.setattr(
+            "astrbot_plugin_jev_gateway.web_api._get_json",
+            _json_stub({"access_token": "new-token"}),
+        )
+        await _call(api_obj.save_settings)
+        assert plugin.config["gateway"]["access_token"] == "new-token"
+
+    async def test_advertised_url_is_used_as_endpoint_base(self, api, monkeypatch):
+        api_obj, plugin = api
+        monkeypatch.setattr(
+            "astrbot_plugin_jev_gateway.web_api._get_json",
+            _json_stub({"advertised_url": "http://astrbot:8770"}),
+        )
+        await _call(api_obj.save_settings)
+        assert plugin.endpoint_base == "http://astrbot:8770"
+
+    async def test_invalid_port_is_rejected(self, api, monkeypatch):
+        api_obj, plugin = api
+        monkeypatch.setattr(
+            "astrbot_plugin_jev_gateway.web_api._get_json",
+            _json_stub({"port": "not-a-number"}),
+        )
+        result = await _call(api_obj.save_settings)
+        assert _is_error(result)

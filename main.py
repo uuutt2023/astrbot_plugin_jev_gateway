@@ -64,7 +64,14 @@ class JevGatewayPlugin(Star):
 
     @property
     def endpoint_base(self) -> str:
-        """客户端要填的代理地址。"""
+        """客户端要填的代理地址。
+
+        「对外地址」填了就用它（比如 Docker 里填容器名 http://astrbot:8770）；
+        没填则按监听地址推一个本机地址。
+        """
+        advertised = str(self._items().get("advertised_url") or "").strip().rstrip("/")
+        if advertised:
+            return advertised
         items = self._items()
         host = str(items.get("host") or "127.0.0.1").strip() or "127.0.0.1"
         if host in ("0.0.0.0", "::"):
@@ -95,6 +102,40 @@ class JevGatewayPlugin(Star):
             self.endpoint_base,
             ", ".join(sorted(registry)) or "（空）",
         )
+        self._warn_docker_binding(host)
+
+    def _warn_docker_binding(self, host: str) -> None:
+        """监听回环却对外提供地址时，多半会在 Docker 里连不通。"""
+        advertised = str(self._items().get("advertised_url") or "").strip()
+        if not advertised:
+            return
+        if host not in ("0.0.0.0", "::"):
+            logger.warning(
+                "[jev_gateway] 监听地址是 %s，但「对外地址」填了 %s。"
+                "跨容器/跨机器访问需要把监听地址改成 0.0.0.0，否则只有本机能连。",
+                host,
+                advertised,
+            )
+
+    async def restart_server(self) -> None:
+        """配置改完后重启监听（地址/端口变了必须重启才生效）。"""
+        await self.server.stop()
+        items = self._items()
+        if not items.get("enabled", True):
+            logger.info("[jev_gateway] 已禁用，不监听端口")
+            return
+        host = str(items.get("host") or "127.0.0.1").strip() or "127.0.0.1"
+        try:
+            port = int(items.get("port") or 8770)
+        except (TypeError, ValueError):
+            port = 8770
+        try:
+            await self.server.start(host, port)
+        except OSError as exc:
+            logger.error(f"[jev_gateway] 端口 {host}:{port} 启动失败: {exc}")
+            return
+        logger.info("[jev_gateway] 已重启 %s", self.endpoint_base)
+        self._warn_docker_binding(host)
 
     async def terminate(self):
         await self.server.stop()
@@ -109,6 +150,7 @@ class JevGatewayPlugin(Star):
         lines = [
             f"Jev 网关：{'运行中' if self.server.port else '未启动'}",
             f"代理地址：{self.endpoint_base}",
+            f"监听地址：{items.get('host') or '127.0.0.1'}:{items.get('port') or 8770}",
             f"访问令牌：{'已设置' if items.get('access_token') else '未设置（不校验）'}",
             "",
         ]

@@ -56,6 +56,8 @@ const running = ref(false)
 const endpointBase = ref('')
 const accessTokenSet = ref(false)
 const entries = ref<Entry[]>([])
+const settings = ref({ host: '127.0.0.1', port: 8770, advertised_url: '', access_token_set: false })
+const draft = ref({ host: '127.0.0.1', port: 8770, advertised_url: '', access_token: '' })
 
 const balances = ref<Record<string, Balance>>({})
 const testProtocol = ref('')
@@ -117,6 +119,19 @@ async function loadEntries() {
     running.value = !!data.running
     endpointBase.value = data.endpoint_base || ''
     accessTokenSet.value = !!data.access_token_set
+    const st = data.settings || {}
+    settings.value = {
+      host: st.host || '127.0.0.1',
+      port: st.port || 8770,
+      advertised_url: st.advertised_url || '',
+      access_token_set: !!st.access_token_set,
+    }
+    draft.value = {
+      host: settings.value.host,
+      port: settings.value.port,
+      advertised_url: settings.value.advertised_url,
+      access_token: '',
+    }
     if (!testProtocol.value && entries.value.length) {
       testProtocol.value = entries.value[0].protocol
     }
@@ -134,6 +149,20 @@ async function saveEntries() {
     const payload = entries.value.map((e) => ({ ...e, api_key: e.api_key || '' }))
     await bridge.apiPost('entries/save', { entries: payload })
     toast.value = { type: 'success', text: '已保存并即时生效' }
+    await loadEntries()
+  } catch (e: any) {
+    toast.value = { type: 'error', text: `保存失败：${e?.message || e}` }
+  } finally {
+    loading.value = false
+  }
+}
+
+async function saveSettings() {
+  loading.value = true
+  try {
+    const data = (await bridge.apiPost('settings/save', { ...draft.value })) as any
+    endpointBase.value = data?.endpoint_base || endpointBase.value
+    toast.value = { type: 'success', text: '网关设置已保存并重启' }
     await loadEntries()
   } catch (e: any) {
     toast.value = { type: 'error', text: `保存失败：${e?.message || e}` }
@@ -226,6 +255,42 @@ onMounted(async () => {
         <n-tab-pane name="entries" tab="配置">
           <n-spin :show="loading">
             <n-space vertical size="medium">
+              <n-card size="small" title="网关设置">
+                <n-grid :x-gap="12" :y-gap="6" cols="1 600 2 900 4">
+                  <n-grid-item>
+                    <n-form-item label="监听地址" label-placement="top" :show-feedback="false">
+                      <n-input v-model:value="draft.host" placeholder="127.0.0.1" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item>
+                    <n-form-item label="监听端口" label-placement="top" :show-feedback="false">
+                      <n-input-number v-model:value="draft.port" :min="1" :max="65535" style="width: 100%" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item>
+                    <n-form-item label="对外地址" label-placement="top" :show-feedback="false">
+                      <n-input v-model:value="draft.advertised_url" placeholder="Docker 里填 http://容器名:8770" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item>
+                    <n-form-item label="访问令牌" label-placement="top" :show-feedback="false">
+                      <n-input
+                        v-model:value="draft.access_token"
+                        type="password"
+                        show-password-on="click"
+                        :placeholder="settings.access_token_set ? '已设置，留空不改' : '留空＝不校验'"
+                      />
+                    </n-form-item>
+                  </n-grid-item>
+                </n-grid>
+                <n-space justify="space-between" align="center">
+                  <n-text depth="3" style="font-size: 12px">
+                    跨容器/跨机器访问要把监听地址改成 0.0.0.0，对外地址填别的容器能访问到的地址。
+                  </n-text>
+                  <n-button type="primary" size="small" :loading="loading" @click="saveSettings">保存并重启</n-button>
+                </n-space>
+              </n-card>
+
               <n-card v-for="(entry, index) in entries" :key="index" size="small" :title="entry.protocol || '新入口'">
                 <template #header-extra>
                   <n-button size="tiny" quaternary type="error" @click="removeEntry(index)">删除</n-button>
