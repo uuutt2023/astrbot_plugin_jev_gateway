@@ -1,5 +1,7 @@
 """网关路由：按协议中转、鉴权、故障转移。"""
 
+import json
+
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -290,3 +292,70 @@ async def test_balance_is_recorded_per_entry(monkeypatch):
     snapshot = server.balances.snapshot()
     values = {key: item["value"] for key, item in snapshot.items()}
     assert set(values.values()) == {111.0, 222.0}, values
+
+
+async def test_call_is_recorded_with_prompt_and_result(monkeypatch):
+    """每次调用都要在日志里留下提示词与结果。"""
+    registry = entries.build_registry(
+        [{"protocol": "p", "kind": "systemone", "base_url": "https://primary"}]
+    )
+    server = GatewayServer(registry=registry)
+
+    async def fake_forward(entry, method, headers, body):
+        return 200, {}, b'{"answers": {"should_reply": {"type": "noul", "noul": 0.8}}}'
+
+    monkeypatch.setattr("astrbot_plugin_jev_gateway.core.server.relay.forward", fake_forward)
+    test_client = TestClient(TestServer(server.app))
+    await test_client.start_server()
+    try:
+        body = json.dumps({
+            "state": "群里有人问问题",
+            "questions": {"should_reply": {"type": "noul", "instructions": "该回吗？"}},
+        }).encode()
+        resp = await test_client.post(
+            "/jev/systemone",
+            data=body,
+            headers={"X-Jev-Gateway-Client": "astrbot_plugin_soupai"},
+        )
+        assert resp.status == 200
+    finally:
+        await test_client.close()
+
+    rows = server.calllog.snapshot()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["client"] == "astrbot_plugin_soupai"
+    assert row["protocol"] == "systemone"
+    assert "该回吗？" in row["prompt"]
+    assert row["state"] == "群里有人问问题"
+    assert row["status"] == 200
+    assert row["result"] == "should_reply=0.8"
+
+
+async def test_dedup_hit_is_logged_as_cached(monkeypatch):
+    """命中 30 秒去重缓存的请求也要留痕，并标出是缓存命中。"""
+    registry = entries.build_registry(
+        [{"protocol": "p", "kind": "systemone", "base_url": "https://primary"}]
+    )
+    server = GatewayServer(registry=registry)
+
+    async def fake_forward(entry, method, headers, body):
+        return 200, {}, b'{"answers": {"should_reply": {"type": "noul", "noul": 0.8}}}'
+
+    monkeypatch.setattr("astrbot_plugin_jev_gateway.core.server.relay.forward", fake_forward)
+    test_client = TestClient(TestServer(server.app))
+    await test_client.start_server()
+    try:
+        body = json.dumps({
+            "state": "同样的内容",
+            "questions": {"should_reply": {"type": "noul", "instructions": "该回吗？"}},
+        }).encode()
+        await test_client.post("/jev/systemone", data=body)
+        await test_client.post("/jev/systemone", data=body)
+    finally:
+        await test_client.close()
+
+    rows = server.calllog.snapshot()
+    assert len(rows) == 2
+    assert rows[0]["cached"] is True
+    assert rows[1]["cached"] is False

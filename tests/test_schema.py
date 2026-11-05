@@ -145,3 +145,17 @@ def test_default_entry_carries_priority_and_weight():
     for entry in schema["gateway"]["items"]["api_entries"]["default"]:
         assert "priority" in entry
         assert "weight" in entry
+
+
+def test_gateway_has_call_log_settings():
+    """调用日志的保留时长可配，默认 7 天。"""
+    schema = json.loads(SCHEMA_PATHS["jev_gateway"].read_text(encoding="utf-8"))
+    gateway = schema["gateway"]["items"]
+
+    retention = gateway["log_retention_days"]
+    assert retention["type"] == "float"
+    assert retention["default"] == 7.0
+
+    max_entries = gateway["log_max_entries"]
+    assert max_entries["type"] == "int"
+    assert max_entries["default"] == 500

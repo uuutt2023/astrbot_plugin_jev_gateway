@@ -18,6 +18,7 @@ from aiohttp import web
 
 from . import balance as balance_mod
 from . import balancer as balancer_mod
+from . import calllog as calllog_mod
 from . import entries as entry_mod
 from . import relay
 from . import topology as topology_mod
@@ -42,6 +43,24 @@ def _json(payload: dict, status: int = 200) -> web.Response:
     )
 
 
+def _extract_prompt(body: bytes) -> tuple[str, dict]:
+    """从请求体里抠出 state 与 questions，日志要记提示词。"""
+    if not body:
+        return "", {}
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return "", {}
+    if not isinstance(data, dict):
+        return "", {}
+    state = data.get("state")
+    questions = data.get("questions")
+    return (
+        state if isinstance(state, str) else "",
+        questions if isinstance(questions, dict) else {},
+    )
+
+
 def _is_loopback(request: web.Request) -> bool:
     peer = request.transport.get_extra_info("peername") if request.transport else None
     if not peer:
@@ -63,8 +82,10 @@ class GatewayServer:
         self.balancer = balancer_mod.Balancer()
         # 记录调用过网关的客户端插件，供 WebUI 的拓扑图用
         self.clients = topology_mod.ClientTracker()
+        # 调用日志：提示词与结果都留一份，保留时长可配
+        self.calllog = calllog_mod.CallLog()
         # 30 秒去重缓存：同协议同请求体短时间内只打一次上游
-        self.cache: dict[str, tuple[float, int, dict, bytes]] = {}
+        self.cache: dict[str, tuple[float, int, dict, bytes, str]] = {}
         self.app = web.Application(client_max_size=64 * 1024 * 1024)
         self.app.router.add_post("/jev/{protocol}", self.handle_relay)
         self.app.router.add_post("/v1/systemone", self.handle_alias)
@@ -197,19 +218,33 @@ class GatewayServer:
         body = await request.read()
         headers = dict(request.headers)
         client_name = request.headers.get(topology_mod.CLIENT_HEADER, "")
+        prompt_state, prompt_questions = _extract_prompt(body)
 
         cache_key = f"{protocol}|{hashlib.sha256(body or b'').hexdigest()}"
         now = time.monotonic()
         cached = self.cache.get(cache_key)
         if cached and now - cached[0] < CACHE_TTL:
-            _, status, resp_headers, resp_body = cached
+            _, status, resp_headers, resp_body, cached_entry_id = cached
             self.clients.record(client_name, protocol, ok=status == 200)
+            self.calllog.record(
+                client=client_name,
+                protocol=protocol,
+                entry_id=cached_entry_id,
+                state=prompt_state,
+                questions=prompt_questions,
+                response=resp_body,
+                status=status,
+                cached=True,
+            )
             return web.Response(body=resp_body, status=status, headers=resp_headers or None)
 
         candidates = await self.balancer.candidates(protocol, group)
         last: tuple[int, dict[str, str], bytes] = (502, {}, b'{"error":"no upstream"}')
+        used_entry_id = ""
+        relay_started = time.monotonic()
         for entry in candidates:
             started = time.monotonic()
+            used_entry_id = entry.id
             last = await relay.forward(entry, request.method, headers, body)
             status, resp_headers, resp_body = last
             elapsed = time.monotonic() - started
@@ -227,8 +262,18 @@ class GatewayServer:
             break
         status, resp_headers, resp_body = last
         self.clients.record(client_name, protocol, ok=status == 200)
+        self.calllog.record(
+            client=client_name,
+            protocol=protocol,
+            entry_id=used_entry_id,
+            state=prompt_state,
+            questions=prompt_questions,
+            response=resp_body,
+            status=status,
+            elapsed_ms=(time.monotonic() - relay_started) * 1000,
+        )
         if status == 200:
-            self.cache[cache_key] = (now, status, resp_headers or {}, resp_body)
+            self.cache[cache_key] = (now, status, resp_headers or {}, resp_body, used_entry_id)
             self._trim_cache()
         return web.Response(
             body=resp_body,

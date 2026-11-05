@@ -22,6 +22,7 @@ import {
   NText,
 } from 'naive-ui'
 import BalancePanel from '@/components/BalancePanel.vue'
+import CallLogPanel from '@/components/CallLogPanel.vue'
 import EntryForm from '@/components/EntryForm.vue'
 import GatewaySettings from '@/components/GatewaySettings.vue'
 import TestPanel from '@/components/TestPanel.vue'
@@ -45,6 +46,23 @@ interface Entry {
   balance_field: string
   url?: string
   key_masked?: string
+}
+
+interface CallRecord {
+  id: number
+  at: number
+  client: string
+  protocol: string
+  entry: string
+  status: number
+  elapsed_ms: number
+  cached: boolean
+  prompt: string
+  questions: Record<string, unknown>
+  state: string
+  truncated: boolean
+  result: string
+  response: unknown
 }
 
 interface Balance {
@@ -87,6 +105,14 @@ const topologySelected = ref<GraphNode | null>(null)
 const topologyAuto = ref(false)
 const detailTab = ref('config')
 let topologyTimer: number | null = null
+
+// 调用记录
+const calls = ref<CallRecord[]>([])
+const callStats = ref<{ clients: string[]; retention_days: number }>({
+  clients: [],
+  retention_days: 7,
+})
+const callClient = ref('')
 
 const isApiNode = computed(() => topologySelected.value?.kind === 'api')
 const isGatewayNode = computed(() => topologySelected.value?.kind === 'gateway')
@@ -166,6 +192,18 @@ async function loadTopology() {
   }
 }
 
+async function loadCalls() {
+  try {
+    const params: Record<string, unknown> = { limit: 50 }
+    if (callClient.value) params.client = callClient.value
+    const data = (await bridge.apiGet('calls', params)) as any
+    calls.value = data.calls || []
+    callStats.value = data.stats || { clients: [], retention_days: 7 }
+  } catch (e) {
+    // 日志取不到不影响别的部分
+  }
+}
+
 async function loadBalance() {
   try {
     const data = (await bridge.apiGet('balance')) as any
@@ -176,7 +214,7 @@ async function loadBalance() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadEntries(), loadTopology(), loadBalance()])
+  await Promise.all([loadEntries(), loadTopology(), loadBalance(), loadCalls()])
 }
 
 async function saveEntries() {
@@ -236,6 +274,11 @@ function onTopologySelect(node: GraphNode | null) {
 }
 
 /** 节点类型的中文名。 */
+function onCallFilter(client: string): void {
+  callClient.value = client
+  loadCalls()
+}
+
 function kindText(kind: string): string {
   if (kind === 'gateway') return '网关'
   if (kind === 'api') return 'API 入口'
@@ -386,6 +429,16 @@ onBeforeUnmount(() => {
       <n-text v-else depth="3" style="font-size: 12px; padding: 10px 2px">
         点上面图里的节点，配置、测试、余额都在那儿改。
       </n-text>
+
+      <n-card size="small" class="log-card">
+        <CallLogPanel
+          :calls="calls"
+          :clients="callStats.clients"
+          :retention-days="callStats.retention_days"
+          @refresh="loadCalls()"
+          @filter="onCallFilter"
+        />
+      </n-card>
     </div>
   </n-config-provider>
 </template>
@@ -405,6 +458,10 @@ onBeforeUnmount(() => {
 }
 
 .detail {
+  margin-top: 12px;
+}
+
+.log-card {
   margin-top: 12px;
 }
 

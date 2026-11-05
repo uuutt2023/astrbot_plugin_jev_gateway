@@ -309,3 +309,33 @@ async def test_entries_carry_stable_id(tmp_path):
     assert ids
     assert all(i for i in ids)
     assert len(set(ids)) == len(ids), "入口 id 不能重复"
+
+
+async def test_calls_endpoint(tmp_path):
+    """调用记录接口给出提示词与结果。"""
+    plugin = _plugin(tmp_path)
+    api = GatewayAPI(plugin)
+    plugin.server.calllog.record(
+        client="astrbot_plugin_soupai",
+        protocol="systemone",
+        entry_id="systemone#0",
+        state="群里有人问问题",
+        questions={"should_reply": {"type": "noul", "instructions": "该回吗？"}},
+        response=b'{"answers": {"should_reply": {"type": "noul", "noul": 0.8}}}',
+        status=200,
+        elapsed_ms=800,
+    )
+    data = (await api.get_calls())["data"]
+    assert len(data["calls"]) == 1
+    call = data["calls"][0]
+    assert call["client"] == "astrbot_plugin_soupai"
+    assert "该回吗？" in call["prompt"]
+    assert call["result"] == "should_reply=0.8"
+    assert data["stats"]["retention_days"] == 7
+
+
+async def test_calls_endpoint_empty(tmp_path):
+    plugin = _plugin(tmp_path)
+    api = GatewayAPI(plugin)
+    data = (await api.get_calls())["data"]
+    assert data["calls"] == []

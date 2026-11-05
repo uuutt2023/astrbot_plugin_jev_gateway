@@ -38,6 +38,21 @@ def _err(message: str, status_code: int = 400) -> Any:
     return resp
 
 
+def _query_param(name: str, default: str = "") -> str:
+    """读查询参数，兼容新版 astrbot.api.web 与 quart 两种形态。"""
+    try:
+        for attr in ("query", "args", "query_params"):
+            holder = getattr(request, attr, None)
+            if not holder:
+                continue
+            value = holder.get(name)
+            if value is not None:
+                return str(value)
+    except Exception:  # noqa: BLE001 - 取不到就用默认值
+        pass
+    return default
+
+
 async def _get_json() -> Dict:
     """读取请求体 JSON，兼容新版 astrbot.api.web 与 quart 两种形态。"""
     if HAS_WEB_API:
@@ -105,6 +120,21 @@ class GatewayAPI:
                     "access_token_set": bool(items_cfg.get("access_token")),
                     "lb_strategy": items_cfg.get("lb_strategy", "round_robin"),
                 },
+            }
+        )
+
+    async def get_calls(self):
+        """最近的调用记录：谁调的、提示词是什么、结果是什么。"""
+        try:
+            limit = max(1, min(500, int(_query_param("limit", "50"))))
+        except (TypeError, ValueError):
+            limit = 50
+        client = _query_param("client", "").strip()
+        server = self._plugin.server
+        return _ok(
+            {
+                "calls": server.calllog.snapshot(limit=limit, client=client),
+                "stats": server.calllog.stats(),
             }
         )
 
@@ -344,6 +374,12 @@ def register(context, plugin) -> None:
             api.get_topology,
             ["GET"],
             "获取拓扑图数据（接入对象 / 网关 / API 入口）",
+        ),
+        (
+            "/astrbot_plugin_jev_gateway/calls",
+            api.get_calls,
+            ["GET"],
+            "获取最近的调用记录（提示词与结果）",
         ),
     ]
     for path, handler, methods, description in routes:

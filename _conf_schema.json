@@ -52,6 +52,18 @@
         ],
         "default": "round_robin"
       },
+      "log_retention_days": {
+        "type": "float",
+        "description": "调用日志保留天数",
+        "hint": "每次调用的提示词与结果在网关留多久，默认 7 天。",
+        "default": 7.0
+      },
+      "log_max_entries": {
+        "type": "int",
+        "description": "调用日志最多留多少条",
+        "hint": "按条数兜底，防止高频调用撑爆内存。",
+        "default": 500
+      },
       "api_entries": {
         "type": "template_list",
         "description": "API 入口",

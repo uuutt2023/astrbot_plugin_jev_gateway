@@ -65,7 +65,23 @@ class JevGatewayPlugin(Star):
         strategy = str(items.get("lb_strategy") or "").strip()
         if strategy in balancer_mod.STRATEGIES:
             self.server.balancer.strategy = strategy
+        self._configure_calllog(items)
         return entry_mod.build_registry(items.get("api_entries"))
+
+    def _configure_calllog(self, items: dict) -> None:
+        """调用日志的保留时长与条数上限，跟着配置走。"""
+        try:
+            days = float(items.get("log_retention_days") or 7.0)
+        except (TypeError, ValueError):
+            days = 7.0
+        try:
+            max_entries = int(items.get("log_max_entries") or 500)
+        except (TypeError, ValueError):
+            max_entries = 500
+        self.server.calllog.configure(
+            retention_seconds=max(0.0, days) * 86400,
+            max_entries=max_entries,
+        )
 
     @property
     def endpoint_base(self) -> str:
