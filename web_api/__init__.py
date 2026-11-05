@@ -119,6 +119,8 @@ class GatewayAPI:
                     "advertised_url": items_cfg.get("advertised_url", ""),
                     "access_token_set": bool(items_cfg.get("access_token")),
                     "lb_strategy": items_cfg.get("lb_strategy", "round_robin"),
+                    "log_retention_days": items_cfg.get("log_retention_days", 7.0),
+                    "log_max_entries": items_cfg.get("log_max_entries", 500),
                 },
             }
         )
@@ -177,6 +179,18 @@ class GatewayAPI:
         if "lb_strategy" in payload:
             strategy = str(payload.get("lb_strategy") or "round_robin").strip()
             gateway["lb_strategy"] = strategy if strategy in balancer_mod.STRATEGIES else "round_robin"
+        if "log_retention_days" in payload:
+            try:
+                days = float(payload.get("log_retention_days"))
+            except (TypeError, ValueError):
+                days = 7.0
+            gateway["log_retention_days"] = max(0.0, days)
+        if "log_max_entries" in payload:
+            try:
+                count = int(payload.get("log_max_entries"))
+            except (TypeError, ValueError):
+                count = 500
+            gateway["log_max_entries"] = max(1, count)
         token = payload.get("access_token")
         if token is not None:
             # 留空表示不改原来的令牌

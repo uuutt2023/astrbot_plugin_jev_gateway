@@ -89,6 +89,8 @@ const settings = ref({
   advertised_url: '',
   access_token_set: false,
   lb_strategy: 'round_robin',
+  log_retention_days: 7,
+  log_max_entries: 500,
 })
 const draft = ref({
   host: '127.0.0.1',
@@ -96,6 +98,8 @@ const draft = ref({
   advertised_url: '',
   access_token: '',
   lb_strategy: 'round_robin',
+  log_retention_days: 7,
+  log_max_entries: 500,
 })
 
 // 拓扑图
@@ -167,6 +171,8 @@ async function loadEntries() {
       advertised_url: st.advertised_url || '',
       access_token_set: !!st.access_token_set,
       lb_strategy: st.lb_strategy || 'round_robin',
+      log_retention_days: st.log_retention_days ?? 7,
+      log_max_entries: st.log_max_entries ?? 500,
     }
     draft.value = {
       host: settings.value.host,
@@ -174,6 +180,8 @@ async function loadEntries() {
       advertised_url: settings.value.advertised_url,
       access_token: '',
       lb_strategy: settings.value.lb_strategy,
+      log_retention_days: settings.value.log_retention_days,
+      log_max_entries: settings.value.log_max_entries,
     }
   } catch (e: any) {
     toast.value = { type: 'error', text: `读取入口失败：${e?.message || e}` }

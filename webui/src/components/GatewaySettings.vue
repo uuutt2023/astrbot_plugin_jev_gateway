@@ -18,6 +18,8 @@ export interface GatewayDraft {
   advertised_url: string
   access_token: string
   lb_strategy: string
+  log_retention_days: number
+  log_max_entries: number
 }
 
 defineProps<{
@@ -59,6 +61,28 @@ const STRATEGY_OPTIONS = [
       <n-grid-item>
         <n-form-item label="负载均衡策略" label-placement="top" :show-feedback="false">
           <n-select v-model:value="draft.lb_strategy" :options="STRATEGY_OPTIONS" />
+        </n-form-item>
+      </n-grid-item>
+      <n-grid-item>
+        <n-form-item label="调用日志保留（天）" label-placement="top" :show-feedback="false">
+          <n-input-number
+            v-model:value="draft.log_retention_days"
+            :min="0"
+            :max="365"
+            :step="1"
+            style="width: 100%"
+          />
+        </n-form-item>
+      </n-grid-item>
+      <n-grid-item>
+        <n-form-item label="调用日志最多条数" label-placement="top" :show-feedback="false">
+          <n-input-number
+            v-model:value="draft.log_max_entries"
+            :min="1"
+            :max="100000"
+            :step="100"
+            style="width: 100%"
+          />
         </n-form-item>
       </n-grid-item>
       <n-grid-item>

@@ -339,3 +339,25 @@ async def test_calls_endpoint_empty(tmp_path):
     api = GatewayAPI(plugin)
     data = (await api.get_calls())["data"]
     assert data["calls"] == []
+
+
+async def test_save_settings_persists_log_retention(tmp_path, monkeypatch):
+    """调用日志的保留时长能从 WebUI 改，并立刻作用到 calllog。"""
+    import astrbot_plugin_jev_gateway.web_api as web_api_mod
+
+    plugin = _plugin(tmp_path)
+    api = GatewayAPI(plugin)
+
+    async def fake_json():
+        return {"log_retention_days": 3, "log_max_entries": 100}
+
+    monkeypatch.setattr(web_api_mod, "_get_json", fake_json)
+    await api.save_settings()
+
+    gateway = plugin.config["gateway"]
+    assert gateway["log_retention_days"] == 3
+    assert gateway["log_max_entries"] == 100
+    # 插件读配置时要把保留时长喂给 calllog
+    plugin._build_registry()
+    assert plugin.server.calllog.retention_seconds == 3 * 86400
+    assert plugin.server.calllog.max_entries == 100
